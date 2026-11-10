@@ -344,6 +344,13 @@ async def list_sessions(request: web.Request) -> web.Response:
     return web.json_response({"sessions": sessions})
 
 
+async def memory_graph(request: web.Request) -> web.Response:
+    graph = getattr(request.app[APP_HOST], "memory_graph", None)
+    if graph is None:
+        raise HostError("graph_unavailable", "Memory Graph requires a compatible Hermes installation.", 501)
+    return web.json_response(await graph(request.match_info["bot"]))
+
+
 async def list_messages(request: web.Request) -> web.Response:
     host: Any = request.app[APP_HOST]
     limit = _int_query(request, "limit", 30, 1, 200)
@@ -648,6 +655,12 @@ def _static_response(root: Path, rel: str, *, asset_base: str = "", api_base: st
     if target.name == "index.html":
         html = target.read_text(encoding="utf-8")
         html = html.replace("__R1_API_BASE__", api_base)
+        # Keep installed creations from reusing a previous JS or CSS bundle.
+        for name in ("app.js", "app.css"):
+            asset = target.with_name(name)
+            if asset.is_file():
+                version = asset.stat()
+                html = html.replace(f'"./{name}"', f'"./{name}?v={version.st_mtime_ns:x}-{version.st_size:x}"')
         html = html.replace("</head>", f'<base href="{asset_base}"></head>')
         response = web.Response(text=html, content_type="text/html")
     else:
@@ -695,6 +708,7 @@ def _add_routes(app: web.Application) -> None:
     r.add_get("/api/v1/bots", list_bots)
     r.add_get("/api/v1/fleet", fleet)
     r.add_get("/api/v1/bots/{bot}/sessions", list_sessions)
+    r.add_get("/api/v1/bots/{bot}/memory-graph", memory_graph)
     r.add_get("/api/v1/bots/{bot}/sessions/{sid}/messages", list_messages)
     r.add_post("/api/v1/bots/{bot}/turns", start_turn)
     r.add_get("/api/v1/turns/{tid}/events", turn_events)

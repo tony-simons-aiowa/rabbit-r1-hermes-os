@@ -23,6 +23,7 @@ Studio (browser on your computer) ──▶ bridge
 
 - **Bot roster** — every local Hermes profile is a bot, with its Bot Mode avatar (shape + color, or uploaded photo), status dot, last reply and an "Active now" strip. Add gateways to chat with agents on other machines from the same R1.
 - **Fleet Now** — see gateway health and the active turns from this device across gateways. Open a pending approval or question and answer it from the same screen.
+- **Memory Graph** — open Settings to explore the links between learned skills and stored memories for a profile on the bridge host. Use the wheel to focus a node. Memory entries use numbered labels.
 - **Animated avatars** — the geometric faces from Hermes Desktop: they blink when idle and think while a turn runs. Pets (petdex sprites you have installed) sit beside the highlighted bot.
 - **Streaming chat** — markdown, code blocks, live tool chips, mid-turn commentary, stop.
 - **Approvals and questions** — when Hermes needs a decision it appears as a sheet you answer with the wheel.
