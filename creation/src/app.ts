@@ -11,6 +11,7 @@ import { openListening } from "./screens/listening";
 import { createSessions } from "./screens/sessions";
 import { createInbox } from "./screens/inbox";
 import { createFleet } from "./screens/fleet";
+import { createGroups } from "./screens/groups";
 import { createSettings } from "./screens/settings";
 import { createDiagnostics } from "./screens/diagnostics";
 
@@ -51,6 +52,10 @@ export function openInbox(): void {
 
 export function openFleet(): void {
   push(createFleet());
+}
+
+export function openGroups(): void {
+  push(createGroups());
 }
 
 export function openSettings(): void {

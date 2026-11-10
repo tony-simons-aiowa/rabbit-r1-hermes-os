@@ -18,6 +18,7 @@ from aiohttp import web
 from PIL import Image, ImageOps
 
 from .auth import RateLimiter, is_local_request, signed_url, verify_asset
+from .groups import Groups, MAX_MEMBERS
 from .host import AssetFile, Host, HostError, Json
 from .store import Store
 from .turns import MAX_WAIT, TurnManager
@@ -47,6 +48,7 @@ REQ_DEVICE = web.RequestKey("device", dict)
 APP_HOST = web.AppKey("host", object)
 APP_STORE = web.AppKey("store", Store)
 APP_TURNS = web.AppKey("turns", TurnManager)
+APP_GROUPS = web.AppKey("groups", Groups)
 APP_LIMITER = web.AppKey("limiter", RateLimiter)
 APP_STATIC = web.AppKey("static_dir", Path)
 APP_ALLOW_REMOTE = web.AppKey("allow_remote_admin", bool)
@@ -369,6 +371,37 @@ async def start_turn(request: web.Request) -> web.Response:
     turn = await turns.start(request[REQ_DEVICE]["id"], request.match_info["bot"],
                              session_id or None, text.strip(), speak, _request_base_path(request))
     return web.json_response({"turn_id": turn.id, "session_id": turn.session_id})
+
+
+async def list_groups(request: web.Request) -> web.Response:
+    return web.json_response({"groups": request.app[APP_GROUPS].list(request[REQ_DEVICE]["id"])})
+
+
+async def create_group(request: web.Request) -> web.Response:
+    body = await _json_body(request)
+    name = _required_str(body, "name", max_len=40, message="Enter a group name.")
+    ids = body.get("bots")
+    if (not isinstance(ids, list) or not 2 <= len(ids) <= MAX_MEMBERS
+            or any(not isinstance(bot, str) for bot in ids) or len(set(ids)) != len(ids)):
+        raise HostError("bad_request", "Choose two to four different bots.", 400)
+    roster = {bot["id"]: bot for bot in await request.app[APP_HOST].list_bots() if bot.get("reachable")}
+    if any(bot not in roster for bot in ids):
+        raise HostError("unavailable", "One of these bots is unavailable.", 409)
+    members = [{"id": bot, "name": roster[bot]["name"],
+                "gateway": roster[bot].get("gateway_name") or "Local"} for bot in ids]
+    room = request.app[APP_GROUPS].create(request[REQ_DEVICE]["id"], name.strip(), members)
+    return web.json_response(room, status=201)
+
+
+async def get_group(request: web.Request) -> web.Response:
+    return web.json_response(request.app[APP_GROUPS].get(request[REQ_DEVICE]["id"], request.match_info["gid"]))
+
+
+async def send_group(request: web.Request) -> web.Response:
+    body = await _json_body(request)
+    text = _required_str(body, "text", max_len=2000, message="Enter a group message.")
+    room = request.app[APP_GROUPS].send(request[REQ_DEVICE]["id"], request.match_info["gid"], text.strip())
+    return web.json_response(room, status=202)
 
 
 async def turn_events(request: web.Request) -> web.Response:
@@ -696,6 +729,7 @@ async def _on_startup(app: web.Application) -> None:
 
 
 async def _on_cleanup(app: web.Application) -> None:
+    await app[APP_GROUPS].close()
     await app[APP_TURNS].close()
     await app[APP_HOST].close()
 
@@ -707,6 +741,10 @@ def _add_routes(app: web.Application) -> None:
     r.add_get("/api/v1/bootstrap", bootstrap)
     r.add_get("/api/v1/bots", list_bots)
     r.add_get("/api/v1/fleet", fleet)
+    r.add_get("/api/v1/groups", list_groups)
+    r.add_post("/api/v1/groups", create_group)
+    r.add_get("/api/v1/groups/{gid}", get_group)
+    r.add_post("/api/v1/groups/{gid}/messages", send_group)
     r.add_get("/api/v1/bots/{bot}/sessions", list_sessions)
     r.add_get("/api/v1/bots/{bot}/memory-graph", memory_graph)
     r.add_get("/api/v1/bots/{bot}/sessions/{sid}/messages", list_messages)
@@ -749,6 +787,7 @@ def create_app(
     app[APP_HOST] = host
     app[APP_STORE] = store
     app[APP_TURNS] = TurnManager(host, store, store.state_dir / "audio")
+    app[APP_GROUPS] = Groups(store, app[APP_TURNS])
     app[APP_LIMITER] = RateLimiter()
     app[APP_STATIC] = Path(static_dir)
     app[APP_ALLOW_REMOTE] = allow_remote_admin

@@ -704,3 +704,29 @@ textarea {
   padding-bottom: 3px;
   white-space: normal;
 }
+
+.group-transcript {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 10px;
+}
+.group-message {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: calc(12px * var(--fs));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.group-message strong {
+  color: var(--accent);
+}
+.group-action {
+  margin: 4px 8px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+}

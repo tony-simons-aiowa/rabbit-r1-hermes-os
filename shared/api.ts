@@ -6,6 +6,8 @@ import type {
   DeviceConfig,
   InboxItem,
   FleetData,
+  GroupChat,
+  GroupSummary,
   MemoryGraph,
   Message,
   PairInfo,
@@ -132,6 +134,18 @@ export class Api {
   }
   fleet() {
     return this.request<FleetData>("GET", "/fleet");
+  }
+  groups() {
+    return this.request<{ groups: GroupSummary[] }>("GET", "/groups");
+  }
+  createGroup(name: string, bots: string[]) {
+    return this.request<GroupChat>("POST", "/groups", { name, bots });
+  }
+  group(id: string) {
+    return this.request<GroupChat>("GET", `/groups/${encodeURIComponent(id)}`);
+  }
+  sendGroup(id: string, text: string) {
+    return this.request<GroupChat>("POST", `/groups/${encodeURIComponent(id)}/messages`, { text });
   }
 
   // ---- admin (Studio) ----
