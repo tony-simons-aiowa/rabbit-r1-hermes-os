@@ -1,0 +1,14 @@
+name: hermes-r1
+version: "0.1.0"
+manifest_version: 2
+api_version: 1
+kind: standalone
+description: "Rabbit R1 bridge for Hermes Agent: serves the R1 app and a small API that lets the handheld chat with your Hermes profiles, plus an r1_notify tool that pushes cards to the device."
+author: Tony Simons
+license: MIT
+homepage: https://github.com/tony-simons-aiowa/rabbit-r1-hermes-os
+tags: [rabbit, r1, mobile, bridge, voice, notifications]
+provides_tools:
+  - r1_notify
+provides_commands:
+  - r1

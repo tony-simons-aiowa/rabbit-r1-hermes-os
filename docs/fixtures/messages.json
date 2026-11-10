@@ -1,0 +1,139 @@
+{
+ "object": "list",
+ "session_id": "api_1794267717_316de638",
+ "data": [
+  {
+   "id": 57002,
+   "session_id": "api_1794267717_316de638",
+   "role": "user",
+   "content": "Use the terminal tool to run `echo r1-fixture` and then reply with exactly: done.",
+   "tool_call_id": null,
+   "tool_calls": null,
+   "tool_name": null,
+   "timestamp": 1794267717.41294,
+   "token_count": null,
+   "finish_reason": null,
+   "reasoning": null,
+   "reasoning_content": null,
+   "display_kind": "internal_notification"
+  },
+  {
+   "id": 57003,
+   "session_id": "api_1794267717_316de638",
+   "role": "assistant",
+   "content": "",
+   "tool_call_id": null,
+   "tool_calls": [
+    {
+     "id": "call_096420f65aab4548b2a4f6b38cd58427",
+     "call_id": "call_096420f65aab4548b2a4f6b38cd58427",
+     "response_item_id": "fc_0bfff150a6db5191016af25a47f92887d183b49e51502a7964",
+     "type": "function",
+     "function": {
+      "name": "skill_view",
+      "arguments": "{\"name\":\"omh-terminal\"}"
+     }
+    }
+   ],
+   "tool_name": null,
+   "timestamp": 1794267720.25361,
+   "token_count": null,
+   "finish_reason": "tool_calls",
+   "reasoning": null,
+   "reasoning_content": null,
+   "display_kind": null
+  },
+  {
+   "id": 57004,
+   "session_id": "api_1794267717_316de638",
+   "role": "tool",
+   "content": "{\"success\": true, \"name\": \"omh-terminal\", \"description\": \"[omh] Shell command or test-suite execution: policy overlay for terminal commands - add cwd, environme\u2026[trimmed]",
+   "tool_call_id": "call_096420f65aab4548b2a4f6b38cd58427",
+   "tool_calls": null,
+   "tool_name": "skill_view",
+   "timestamp": 1794267720.420861,
+   "token_count": null,
+   "finish_reason": null,
+   "reasoning": null,
+   "reasoning_content": null,
+   "display_kind": null
+  },
+  {
+   "id": 57005,
+   "session_id": "api_1794267717_316de638",
+   "role": "assistant",
+   "content": "",
+   "tool_call_id": null,
+   "tool_calls": [
+    {
+     "id": "call_09400bbf85da4708864ea71b9b1b9e14",
+     "call_id": "call_09400bbf85da4708864ea71b9b1b9e14",
+     "response_item_id": "fc_0e10991fb726ea21016af25a4acfa887d19e6b21cbd5a4ef54",
+     "type": "function",
+     "function": {
+      "name": "terminal",
+      "arguments": "{\"command\":\"echo r1-fixture\"}"
+     }
+    }
+   ],
+   "tool_name": null,
+   "timestamp": 1794267723.108858,
+   "token_count": null,
+   "finish_reason": "tool_calls",
+   "reasoning": null,
+   "reasoning_content": null,
+   "display_kind": null
+  },
+  {
+   "id": 57006,
+   "session_id": "api_1794267717_316de638",
+   "role": "tool",
+   "content": "{\"output\": \"r1-fixture\", \"exit_code\": 0, \"error\": null}",
+   "tool_call_id": "call_09400bbf85da4708864ea71b9b1b9e14",
+   "tool_calls": null,
+   "tool_name": "terminal",
+   "timestamp": 1794267723.304909,
+   "token_count": null,
+   "finish_reason": null,
+   "reasoning": null,
+   "reasoning_content": null,
+   "display_kind": null
+  },
+  {
+   "id": 57007,
+   "session_id": "api_1794267717_316de638",
+   "role": "assistant",
+   "content": "done.",
+   "tool_call_id": null,
+   "tool_calls": null,
+   "tool_name": null,
+   "timestamp": 1794267724.569877,
+   "token_count": null,
+   "finish_reason": "stop",
+   "reasoning": null,
+   "reasoning_content": null,
+   "display_kind": null
+  },
+  {
+   "id": 57008,
+   "session_id": "api_1794267717_316de638",
+   "role": "session_meta",
+   "content": null,
+   "tool_call_id": null,
+   "tool_calls": null,
+   "tool_name": null,
+   "timestamp": 1794267724.6422122,
+   "token_count": null,
+   "finish_reason": null,
+   "reasoning": null,
+   "reasoning_content": null,
+   "display_kind": null
+  }
+ ],
+ "pagination": {
+  "limit": 500,
+  "offset": 0,
+  "order": "latest",
+  "returned": 7
+ }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "hermes-r1-os",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Hermes Agent OS for the Rabbit R1: creation, bridge plugin, and Studio customizer",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "bridge:mock": "uv run --project plugin/hermes-r1 python scripts/dev_bridge.py --mock",
+    "test:py": "cd plugin/hermes-r1 && uv run pytest -q"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "qrcode-generator": "^2.0.4"
+  }
+}

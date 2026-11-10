@@ -1,0 +1,17 @@
+[project]
+name = "hermes-r1"
+version = "0.1.0"
+description = "Hermes Agent bridge and plugin for the Rabbit R1"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = ["aiohttp>=3.9", "pyyaml>=6", "pillow>=10"]
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-aiohttp>=1.0", "pytest-asyncio>=0.23"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.uv]
+package = false

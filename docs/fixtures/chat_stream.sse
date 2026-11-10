@@ -1,0 +1,33 @@
+event: run.started
+data: {"user_message": {"role": "user", "content": "Use the terminal tool to run `echo r1-fixture` and then reply with exactly: done."}, "runtime": {"provider": "", "model": "", "route_source": "global", "requested": {"provider": "", "model": ""}}, "session_id": "api_1794267717_316de638", "run_id": "run_34c1ec55feb940d3ad1f042492da329b", "seq": 1, "ts": 1794267717.397619}
+
+event: message.started
+data: {"message": {"id": "msg_5ce6fb72051e4a24a4a0680cda1f9a2a", "role": "assistant"}, "session_id": "api_1794267717_316de638", "run_id": "run_34c1ec55feb940d3ad1f042492da329b", "seq": 2, "ts": 1794267717.397643}
+
+event: tool.started
+data: {"message_id": "msg_5ce6fb72051e4a24a4a0680cda1f9a2a", "tool_name": "skill_view", "preview": "omh-terminal", "args": {"name": "omh-terminal"}, "session_id": "api_1794267717_316de638", "run_id": "run_34c1ec55feb940d3ad1f042492da329b", "seq": 3, "ts": 1794267720.2808561}
+
+event: tool.completed
+data: {"message_id": "msg_5ce6fb72051e4a24a4a0680cda1f9a2a", "tool_name": "skill_view", "preview": null, "args": null, "session_id": "api_1794267717_316de638", "run_id": "run_34c1ec55feb940d3ad1f042492da329b", "seq": 4, "ts": 1794267720.421896}
+
+event: tool.started
+data: {"message_id": "msg_5ce6fb72051e4a24a4a0680cda1f9a2a", "tool_name": "terminal", "preview": "echo r1-fixture", "args": {"command": "echo r1-fixture"}, "session_id": "api_1794267717_316de638", "run_id": "run_34c1ec55feb940d3ad1f042492da329b", "seq": 5, "ts": 1794267723.1351612}
+
+event: tool.completed
+data: {"message_id": "msg_5ce6fb72051e4a24a4a0680cda1f9a2a", "tool_name": "terminal", "preview": null, "args": null, "session_id": "api_1794267717_316de638", "run_id": "run_34c1ec55feb940d3ad1f042492da329b", "seq": 6, "ts": 1794267723.307034}
+
+event: assistant.delta
+data: {"message_id": "msg_5ce6fb72051e4a24a4a0680cda1f9a2a", "delta": "\n\ndone", "session_id": "api_1794267717_316de638", "run_id": "run_34c1ec55feb940d3ad1f042492da329b", "seq": 7, "ts": 1794267724.426852}
+
+event: assistant.delta
+data: {"message_id": "msg_5ce6fb72051e4a24a4a0680cda1f9a2a", "delta": ".", "session_id": "api_1794267717_316de638", "run_id": "run_34c1ec55feb940d3ad1f042492da329b", "seq": 8, "ts": 1794267724.42886}
+
+event: assistant.completed
+data: {"session_id": "api_1794267717_316de638", "message_id": "msg_5ce6fb72051e4a24a4a0680cda1f9a2a", "content": "done.", "completed": true, "partial": false, "interrupted": false, "runtime": {"provider": "", "model": "", "route_source": "global", "requested": {"provider": "", "model": ""}}, "run_id": "run_34c1ec55feb940d3ad1f042492da329b", "seq": 9, "ts": 1794267725.258579}
+
+event: run.completed
+data: {"session_id": "api_1794267717_316de638", "message_id": "msg_5ce6fb72051e4a24a4a0680cda1f9a2a", "completed": true, "partial": false, "interrupted": false, "messages": [{"role": "assistant", "content": "", "tool_calls": [{"call_id": "call_096420f65aab4548b2a4f6b38cd58427", "function": {"arguments": "{\"name\":\"omh-terminal\"}", "name": "skill_view"}, "id": "call_096420f65aab4548b2a4f6b38cd58427", "response_item_id": "fc_0bfff150a6db5191016af25a47f92887d183b49e51502a7964", "type": "function"}], "timestamp": 1794267720.25361, "finish_reason": "tool_calls", "reasoning": null}, {"role": "tool", "content": "{\"success\": true, \"name\": \"omh-terminal\", \"description\": \"[omh] Shell command or test-suite execution: policy overlay for terminal commands - add cwd, environme\u2026[trimmed]", "tool_call_id": "call_096420f65aab4548b2a4f6b38cd58427", "tool_name": "skill_view", "timestamp": 1794267720.420861}, {"role": "assistant", "content": "", "tool_calls": [{"call_id": "call_09400bbf85da4708864ea71b9b1b9e14", "function": {"arguments": "{\"command\":\"echo r1-fixture\"}", "name": "terminal"}, "id": "call_09400bbf85da4708864ea71b9b1b9e14", "response_item_id": "fc_0e10991fb726ea21016af25a4acfa887d19e6b21cbd5a4ef54", "type": "function"}], "timestamp": 1794267723.108858, "finish_reason": "tool_calls", "reasoning": null}, {"role": "tool", "content": "{\"output\": \"r1-fixture\", \"exit_code\": 0, \"error\": null}", "tool_call_id": "call_09400bbf85da4708864ea71b9b1b9e14", "tool_name": "terminal", "timestamp": 1794267723.304909}, {"role": "assistant", "content": "done.", "timestamp": 1794267724.569877, "finish_reason": "stop", "reasoning": null}], "usage": {"input_tokens": 98735, "output_tokens": 47, "total_tokens": 98782}, "runtime": {"provider": "", "model": "", "route_source": "global", "requested": {"provider": "", "model": ""}}, "run_id": "run_34c1ec55feb940d3ad1f042492da329b", "seq": 10, "ts": 1794267725.258584}
+
+event: done
+data: {"session_id": "api_1794267717_316de638", "run_id": "run_34c1ec55feb940d3ad1f042492da329b", "seq": 11, "ts": 1794267725.258602}
+
