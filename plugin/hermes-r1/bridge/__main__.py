@@ -38,6 +38,7 @@ class Tunnel:
     url: str | None = None
     proc: asyncio.subprocess.Process | None = None
     drain: asyncio.Task[None] | None = None
+    cleanup: tuple[str, ...] = ()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -46,6 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--host", default="127.0.0.1", help="bind address (default 127.0.0.1)")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="port (default 8717)")
     parser.add_argument("--public-url", default="", metavar="URL", help="public HTTPS base URL of this bridge")
+    parser.add_argument("--base-path", default="", metavar="PATH", help="mount the bridge under a URL path")
     parser.add_argument("--tunnel", choices=["none", "cloudflared", "tailscale"], default="none",
                         help="expose the bridge through a tunnel and use its URL as the public URL")
     parser.add_argument("--allow-remote-admin", action="store_true",
@@ -53,6 +55,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--hermes-url", default="http://127.0.0.1:8642", help="Hermes API server URL")
     parser.add_argument("--hermes-home", default="", metavar="PATH",
                         help="Hermes home (default $HERMES_HOME or ~/.hermes)")
+    parser.add_argument("--gateways-file", default="", metavar="PATH",
+                        help="JSON array of additional Hermes gateways (keys from named environment variables)")
     parser.add_argument("--state-dir", default="", metavar="PATH", help="bridge state directory")
     parser.add_argument("--no-open", action="store_true", help="reserved; the bridge never opens a browser")
     return parser
@@ -77,7 +81,16 @@ def _build_host(args: argparse.Namespace) -> Any | None:
         print("hint: run with --mock to try the bridge without Hermes.", file=sys.stderr)
         return None
     hermes_home = Path(args.hermes_home or os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
-    return HermesHost(hermes_home=hermes_home.expanduser(), api_url=args.hermes_url)
+    primary = HermesHost(hermes_home=hermes_home.expanduser(), api_url=args.hermes_url)
+    if not args.gateways_file:
+        return primary
+    try:
+        from .gateways import GatewayHost, load_gateways
+        gateways = load_gateways(Path(args.gateways_file).expanduser())
+    except ValueError as exc:
+        print(f"error: --gateways-file: {exc}", file=sys.stderr)
+        return None
+    return GatewayHost(primary, hermes_home.expanduser(), gateways)
 
 
 # ---- tunnels -----------------------------------------------------------
@@ -106,7 +119,7 @@ async def _read_tunnel_url(proc: asyncio.subprocess.Process) -> str | None:
         return None
 
 
-async def _start_cloudflared(port: int) -> Tunnel:
+async def _start_cloudflared(port: int, base_path: str = "") -> Tunnel:
     try:
         proc = await asyncio.create_subprocess_exec(
             "cloudflared", "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{port}",
@@ -120,7 +133,7 @@ async def _start_cloudflared(port: int) -> Tunnel:
         print("warning: cloudflared did not report a public URL within 30 s; continuing without one.")
         await _stop_process(proc)
         return Tunnel()
-    return Tunnel(url=url, proc=proc, drain=asyncio.create_task(_drain(proc.stdout)))
+    return Tunnel(url=f"{url}{base_path.rstrip('/')}", proc=proc, drain=asyncio.create_task(_drain(proc.stdout)))
 
 
 async def _run_capture(*args: str) -> tuple[int, bytes, bytes]:
@@ -134,9 +147,11 @@ async def _run_capture(*args: str) -> tuple[int, bytes, bytes]:
     return proc.returncode or 0, out, err
 
 
-async def _start_tailscale(port: int) -> Tunnel:
+async def _start_tailscale(port: int, base_path: str) -> Tunnel:
+    path = base_path or "/r1"
     try:
-        code, _, err = await _run_capture("tailscale", "funnel", "--bg", str(port))
+        code, _, err = await _run_capture(
+            "tailscale", "funnel", "--https=10000", f"--set-path={path}", "--bg", str(port))
         if code != 0:
             print(f"warning: tailscale funnel failed: {err.decode('utf-8', 'replace').strip()}")
             return Tunnel()
@@ -145,7 +160,8 @@ async def _start_tailscale(port: int) -> Tunnel:
     except (OSError, asyncio.TimeoutError, KeyError, ValueError, TypeError):
         print("warning: could not read the Tailscale DNS name; continuing without a public URL.")
         return Tunnel()
-    return Tunnel(url=f"https://{dns_name}")
+    return Tunnel(url=f"https://{dns_name}:10000{path}", cleanup=(
+        "tailscale", "funnel", "--https=10000", f"--set-path={path}", "off"))
 
 
 async def _stop_process(proc: asyncio.subprocess.Process) -> None:
@@ -164,13 +180,18 @@ async def _stop_tunnel(tunnel: Tunnel) -> None:
         tunnel.drain.cancel()
     if tunnel.proc is not None:
         await _stop_process(tunnel.proc)
+    if tunnel.cleanup:
+        try:
+            await _run_capture(*tunnel.cleanup)
+        except (OSError, asyncio.TimeoutError):
+            log.exception("could not remove the temporary Tailscale Funnel route")
 
 
-async def _open_tunnel(kind: str, port: int) -> Tunnel:
+async def _open_tunnel(kind: str, port: int, base_path: str = "") -> Tunnel:
     if kind == "cloudflared":
-        return await _start_cloudflared(port)
+        return await _start_cloudflared(port, base_path)
     if kind == "tailscale":
-        return await _start_tailscale(port)
+        return await _start_tailscale(port, base_path or "/r1")
     return Tunnel()
 
 
@@ -198,7 +219,7 @@ async def _serve(args: argparse.Namespace, app: web.Application, store: Store) -
     try:
         site = web.TCPSite(runner, args.host, args.port)
         await site.start()
-        tunnel = await _open_tunnel(args.tunnel, args.port)
+        tunnel = await _open_tunnel(args.tunnel, args.port, args.base_path)
         if tunnel.url:
             store.set_public_url(tunnel.url)
         print(_banner(args, store, store.public_url, args.mock), flush=True)
@@ -211,6 +232,16 @@ async def _serve(args: argparse.Namespace, app: web.Application, store: Store) -
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.tunnel == "tailscale" and not args.base_path:
+        args.base_path = "/r1"
+    args.base_path = args.base_path.rstrip("/")
+    if args.base_path and (
+        not args.base_path.startswith("/")
+        or not re.fullmatch(r"/[A-Za-z0-9._~/-]+", args.base_path)
+        or any(part in (".", "..") for part in args.base_path.split("/"))
+    ):
+        print("error: --base-path must be a safe absolute URL path, such as /r1", file=sys.stderr)
+        return 2
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     store = Store(_state_dir(args))
     if args.public_url:
@@ -223,7 +254,8 @@ def main(argv: list[str] | None = None) -> int:
     if host is None:
         return 2
     app = create_app(host, store, static_dir=PLUGIN_DIR / "static",
-                     allow_remote_admin=args.allow_remote_admin, version=VERSION)
+                     allow_remote_admin=args.allow_remote_admin, base_path=args.base_path,
+                     version=VERSION)
     app[APP_LOCAL_URL] = f"http://127.0.0.1:{args.port}"
     try:
         return asyncio.run(_serve(args, app, store))

@@ -9,7 +9,7 @@ An open-source Hermes Agent experience for the Rabbit R1:
 
 | Piece | Path | Tech | Role |
 |---|---|---|---|
-| **Bridge + Hermes plugin** | `plugin/hermes-r1/` | Python 3.11+, aiohttp | Hermes plugin (`hermes r1 …` CLI, `r1_notify` tool). Runs an HTTP server that serves the two web apps and a small JSON API, and talks to the user's Hermes API server on localhost. Hermes credentials never leave this process. |
+| **Bridge + Hermes plugin** | `plugin/hermes-r1/` | Python 3.11+, aiohttp | Hermes plugin (`hermes r1 …` CLI, `r1_notify` tool). Serves the web apps and JSON API, and routes requests to the primary Hermes API server and any configured additional gateways. The bridge sends each API key only to its configured upstream. |
 | **Creation** | `creation/` | vanilla TypeScript, esbuild, no framework | The app that runs on the R1 (240×282 WebView), installed by QR code. |
 | **Studio** | `studio/` | vanilla TypeScript, esbuild, no framework | Desktop web app: pair devices, customize everything, live emulator. |
 | **Shared** | `shared/` | TypeScript | Protocol types, API client, avatar renderer, themes, tool icons. |
@@ -55,7 +55,9 @@ Base path `/api/v1`. JSON in/out, UTF-8. Errors: HTTP status + `{"error":{"code"
 
 ```ts
 type Bot = {
-  id: string;            // Hermes profile name; the primary profile is "default"
+  id: string;            // primary: profile name; additional gateway: "<gateway_id>:<profile_id>"
+  gateway_id?: string;   // "local" for the primary gateway; absent on older bridges
+  gateway_name?: string; // display label for grouping bots
   name: string;          // display name
   title: string;         // short role line, may be ""
   description: string;
@@ -128,6 +130,7 @@ Default `DeviceConfig`:
 | `POST /api/v1/pair` | none | `{"code":"ABCD2345","name":"Tony's R1"}` | `{"token":"…","device":{"id":"dev_…","name":"…"}}`; 400 `bad_code` |
 | `GET /api/v1/bootstrap` | device | | `{"server":{"version","mock"},"device":{"id","name"},"config":DeviceConfig,"config_rev":int,"bots":Bot[],"voice":{"stt":bool,"tts":bool}}` |
 | `GET /api/v1/bots` | device | | `{"bots":Bot[],"config_rev":int}` — `config_rev` lets the device notice Studio edits and re-bootstrap |
+| `GET /api/v1/fleet` | device | | `{"needs_you":[{"turn_id","bot_id","ask"}],"working":[{"turn_id","bot_id"}],"gateways":[{"id","name","status"}]}` — `ask` is a turn ask event without `seq`. Status is `online`, `offline`, or `unknown`. Activity is limited to turns started by the authenticated device through this bridge. |
 | `GET /api/v1/bots/{bot}/sessions?limit=20` | device | | `{"sessions":Session[]}` newest first |
 | `GET /api/v1/bots/{bot}/sessions/{sid}/messages?limit=30` | device | | `{"messages":Message[]}` oldest→newest, last `limit` user/assistant messages; tool results folded into `tools` |
 | `POST /api/v1/bots/{bot}/turns` | device | `{"text":"…","session_id":"…"\|null,"speak":bool}` | `{"turn_id":"t_…","session_id":"…"}`; 409 `bot_locked`, 429 `busy` |
@@ -149,7 +152,7 @@ Turn retention: a finished turn's event log is kept 10 minutes. One running turn
 |---|---|
 | `GET /api/v1/admin/state` | `{"config":DeviceConfig,"config_rev":int,"devices":[{"id","name","created","last_seen"}],"bots":Bot[],"public_url":string,"local_url":string,"voice":{"stt","tts"},"mock":bool,"version":string}` |
 | `PUT /api/v1/admin/config` (body `DeviceConfig`) | `{"config":DeviceConfig,"config_rev":int}`; validates + fills defaults; 400 `bad_config` |
-| `POST /api/v1/admin/pair` | `{"code":"ABCD2345","expires":unix,"url":"<public_url>/?pair=ABCD2345","qr":{"title":"Hermes","url":…,"description":"Hermes Agent for rabbit r1","iconUrl":"<public_url>/icon.png","themeColor":"#4a84fe"}}` — code: 8 chars from `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`, single use, 10 min |
+| `POST /api/v1/admin/pair` | `{"code":"ABCD2345","expires":unix,"url":"<public_url>/?pair=ABCD2345","qr":{"title":"Hermes","url":…,"description":"Hermes Agent for rabbit r1","iconUrl":"<public_url>/nous-girl.png","themeColor":"#4a84fe"}}` — code: 8 chars from `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`, single use, 10 min |
 | `DELETE /api/v1/admin/devices/{id}` | `{"ok":true}` |
 | `POST /api/v1/admin/preview-token` | `{"token":"…"}` — a device token valid 12 h, device name "Studio preview", not listed in devices |
 | `PUT /api/v1/admin/public-url` (`{"url":"https://…"}`) | `{"public_url":…}` |
@@ -169,6 +172,7 @@ plugin/hermes-r1/
     host.py            # Host protocol + dataclasses  (CONTRACT — do not change signatures)
     mock_host.py       # MockHost: scripted bots, streaming, tools, approvals — no Hermes needed
     hermes_host.py     # HermesHost: real implementation
+    gateways.py        # gateway configuration and host routing
     store.py           # JSON state file: admin token, signing secret, devices, config, pair codes, inbox
     config.py          # DeviceConfig defaults + validation/normalization
     auth.py            # token hashing, signing, loopback/admin checks, rate limiter
@@ -181,6 +185,9 @@ plugin/hermes-r1/
 
 - State dir: `$HERMES_R1_HOME` or `$HERMES_HOME/r1` or `~/.hermes/r1`. Files: `state.json` (0600, atomic write), `inbox.jsonl` (appended by the `r1_notify` tool from the gateway process, tailed by the bridge), `audio/` (TTS cache, pruned > 1 h).
 - Default bind `127.0.0.1:8717`.
+- With `--gateways-file`, the bridge loads additional gateways at startup. Bot IDs are namespaced by gateway so sessions, turn controls, roster preferences and avatar overrides route independently even when profile or session IDs match. Primary bot IDs are unchanged. Clients receive gateway IDs and display names; the bridge retains the upstream URLs and API keys.
+- Each entry in the JSON array has `id`, `name`, `url`, and `key_env`. IDs are unique and use 1–48 ASCII letters, digits, underscores, or hyphens; `local` is reserved. `key_env` names an environment variable set for the bridge process. An optional `profiles` object maps named profile IDs to their own `name` and `key_env`. The bridge sends those requests to `/p/<profile>/…` using that profile's key. Gateway URLs must use HTTPS or loopback HTTP and must not require redirects.
+- Speech-to-text and text-to-speech use the primary bridge's local Hermes tools for every bot.
 - `HermesHost` talks to the Hermes API server (`http://127.0.0.1:8642` by default):
   - default profile → unprefixed routes with `API_SERVER_KEY` from `$HERMES_HOME/.env`;
   - named profile → `/p/<profile>/…` with that profile's own `API_SERVER_KEY` from `$HERMES_HOME/profiles/<profile>/.env` (Hermes requires this; a profile without a key is `reachable:false`). `hermes r1 setup` offers to generate missing keys.
@@ -273,6 +280,7 @@ Screens:
 9. **Inbox** — notification cards.
 10. **Settings** — theme (cycles presets, local preview only), font size, Diagnostics (runs capability probes: native bridge, storage, mic, MediaRecorder mime types, audio playback, network round-trip ms, user agent — shows ✓/✗ lines), Unpair, About.
 11. **Offline / error banner** — non-blocking 16px banner at top when a request fails; retries with backoff.
+12. **Fleet Now** — open from the home roster. Needs You shows pending approvals and questions, Working shows active turns without pending questions, and Gateways shows connection status across the fleet. Selecting a question opens its controls and returns to Fleet Now after answering.
 
 Persistence on device: token in `creationStorage.secure` (fallback `localStorage`); last bot + last session per bot in `creationStorage.plain` (fallback `localStorage`).
 

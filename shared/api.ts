@@ -5,6 +5,7 @@ import type {
   Bot,
   DeviceConfig,
   InboxItem,
+  FleetData,
   Message,
   PairInfo,
   Session,
@@ -29,7 +30,8 @@ export class Api {
   timeoutMs: number;
 
   constructor(opts: ApiOptions) {
-    this.base = (opts.base || "") + "/api/v1";
+    const configuredBase = document.querySelector<HTMLMetaElement>('meta[name="r1-api-base"]')?.content || "";
+    this.base = (opts.base ?? configuredBase).replace(/\/$/, "") + "/api/v1";
     this.token = opts.token;
     this.timeoutMs = opts.timeoutMs || 15000;
   }
@@ -123,6 +125,9 @@ export class Api {
   }
   inbox(after = 0, wait = 0) {
     return this.request<{ items: InboxItem[]; next: number }>("GET", `/inbox?after=${after}&wait=${wait}`, undefined, (wait + 10) * 1000);
+  }
+  fleet() {
+    return this.request<FleetData>("GET", "/fleet");
   }
 
   // ---- admin (Studio) ----

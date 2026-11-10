@@ -4,14 +4,14 @@ import type { AppEvent } from "../platform";
 import type { Screen } from "../nav";
 import { renderAvatar, setAvatarState, renderPet, petMoodFor } from "../../../shared/avatar";
 import type { Bot } from "../../../shared/protocol";
-import { state, subscribe, orderedBots, rememberBot } from "../state";
+import { state, subscribe, orderedBots, rememberBot, availableGateways, selectedGateway, rememberGateway, gatewayId } from "../state";
 import { refreshChrome, toast } from "../chrome";
-import { openChat, openInbox, openSettings, talk, flags } from "../app";
+import { openChat, openInbox, openFleet, openSettings, talk, flags } from "../app";
 import { canTalk } from "./listening";
 
 const PET_HEIGHT = 30;
 
-type Item = { kind: "bot"; bot: Bot } | { kind: "inbox" } | { kind: "settings" };
+type Item = { kind: "bot"; bot: Bot } | { kind: "gateway" } | { kind: "fleet" } | { kind: "inbox" } | { kind: "settings" };
 
 export function createHome(): Screen {
   const el = h("div", { class: "scr home" });
@@ -61,6 +61,16 @@ export function createHome(): Screen {
   function activate(i: number): void {
     const it = items[i];
     if (!it) return;
+    if (it.kind === "gateway") {
+      const gateways = availableGateways();
+      if (gateways.length > 1) {
+        const current = gateways.findIndex((g) => g.id === selectedGateway());
+        rememberGateway(gateways[(current + 1) % gateways.length].id);
+        render(true);
+      }
+      return;
+    }
+    if (it.kind === "fleet") return openFleet();
     if (it.kind === "inbox") return openInbox();
     if (it.kind === "settings") return openSettings();
     if (!it.bot.reachable) return toast(it.bot.locked_reason || "This bot is locked");
@@ -69,7 +79,9 @@ export function createHome(): Screen {
   }
 
   function render(force = false): void {
-    const bots = orderedBots();
+    const gateway = selectedGateway();
+    const gateways = availableGateways();
+    const bots = orderedBots().filter((b) => gatewayId(b) === gateway);
     const nIn = state.inbox.length;
     const sigNow = JSON.stringify([
       bots.map((b) => [b.id, b.name, b.state, b.active, b.reachable, b.last && b.last.text, b.pet && b.pet.url, b.avatar]),
@@ -77,6 +89,8 @@ export function createHome(): Screen {
       state.config.roster,
       state.config.home.greeting,
       state.config.buttons.long_press,
+      gateway,
+      gateways,
     ]);
     if (!force && sigNow === sig) return;
     sig = sigNow;
@@ -85,6 +99,8 @@ export function createHome(): Screen {
     greet.style.display = state.config.home.greeting ? "" : "none";
 
     items = bots.map((b): Item => ({ kind: "bot", bot: b }));
+    items.unshift({ kind: "fleet" });
+    if (gateways.length > 1) items.unshift({ kind: "gateway" });
     if (nIn) items.push({ kind: "inbox" });
     items.push({ kind: "settings" });
 
@@ -102,6 +118,15 @@ export function createHome(): Screen {
 
     avatars = [];
     const rows = items.map((it) => {
+      if (it.kind === "gateway") {
+        avatars.push(null);
+        const name = gateways.find((g) => g.id === gateway)?.name || "Local";
+        return h("div", { class: "row hrow special gateway-row" }, h("div", { class: "row-main" }, h("div", { class: "row-t" }, "Gateway · " + name), h("div", { class: "row-s" }, "Click to switch")));
+      }
+      if (it.kind === "fleet") {
+        avatars.push(null);
+        return h("div", { class: "row hrow special fleet-entry" }, h("div", { class: "row-main" }, h("div", { class: "row-t" }, "Fleet Now"), h("div", { class: "row-s" }, "Needs You · Working · Gateways")));
+      }
       if (it.kind === "inbox") {
         avatars.push(null);
         return h("div", { class: "row hrow special" }, h("div", { class: "row-main" }, h("div", { class: "row-t" }, "Inbox (" + nIn + ")")));

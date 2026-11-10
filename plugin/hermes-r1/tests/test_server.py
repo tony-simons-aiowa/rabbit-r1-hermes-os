@@ -418,7 +418,7 @@ async def test_admin_pair_returns_qr_with_public_url(client, store):
     data = await (await client.post("/api/v1/admin/pair", headers=admin(store))).json()
     assert data["url"] == f"https://r1.example.com/?pair={data['code']}"
     assert data["qr"]["url"] == data["url"]
-    assert data["qr"]["iconUrl"] == "https://r1.example.com/icon.png"
+    assert data["qr"]["iconUrl"] == "https://r1.example.com/nous-girl.png"
     assert data["expires"] > time.time()
     bad = await client.put("/api/v1/admin/public-url", headers=admin(store), json={"url": "ftp://x"})
     assert bad.status == 400
@@ -474,3 +474,23 @@ async def test_studio_not_built_and_redirect(client):
     assert resp.status == 200 and "Not built yet" in await resp.text()
     resp = await client.get("/studio", allow_redirects=False)
     assert resp.status == 302 and resp.headers["Location"] == "/studio/"
+
+
+async def test_path_mounted_bridge_proxy_strips_prefix(aiohttp_client, store, static_dir):
+    (static_dir / "app" / "index.html").write_text(
+        '<!doctype html><head><meta name="r1-api-base" content="__R1_API_BASE__"></head>'
+    )
+    app = create_app(MockHost(speed=0), store, static_dir=static_dir, base_path="/r1")
+    client = await aiohttp_client(app)
+
+    funnel = {"Tailscale-Funnel-Request": "1"}
+    page = await client.get("/", headers=funnel)
+    html = await page.text()
+    assert page.status == 200
+    assert '<base href="/r1/">' in html
+    assert 'name="r1-api-base" content="/r1"' in html
+    assert (await client.get("/app.js", headers=funnel)).status == 200
+    assert (await client.get("/api/v1/health", headers=funnel)).status == 200
+    assert (await client.get("/api/v1/bots", headers=funnel)).status == 401
+    local_page = await client.get("/")
+    assert '<base href="./">' in await local_page.text()

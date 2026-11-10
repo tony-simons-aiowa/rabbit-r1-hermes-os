@@ -298,10 +298,12 @@ def setup_parser(parser: argparse.ArgumentParser) -> None:
     serve.add_argument("--host", default=None, help="bind address (default 127.0.0.1)")
     serve.add_argument("--port", type=int, default=None, help=f"bind port (default {DEFAULT_PORT})")
     serve.add_argument("--public-url", default=None, help="public HTTPS URL of the bridge")
+    serve.add_argument("--base-path", default=None, help="URL path of the bridge behind a reverse proxy")
     serve.add_argument("--tunnel", choices=["none", "cloudflared", "tailscale"], default=None)
     serve.add_argument("--allow-remote-admin", action="store_true")
     serve.add_argument("--hermes-url", default=None, help=f"Hermes API server (default {DEFAULT_HERMES_URL})")
     serve.add_argument("--hermes-home", default=None, help="Hermes home (default $HERMES_HOME or ~/.hermes)")
+    serve.add_argument("--gateways-file", default=None, help="JSON file configuring additional Hermes gateways")
     serve.add_argument("--state-dir", default=None, help="bridge state directory")
 
     status = sub.add_parser("status", help="show whether the bridge is running")
@@ -332,8 +334,9 @@ def _serve_argv(args: argparse.Namespace) -> list[str]:
         argv.append("--allow-remote-admin")
     for flag, value in (
         ("--host", args.host), ("--port", args.port), ("--public-url", args.public_url),
+        ("--base-path", args.base_path),
         ("--tunnel", args.tunnel), ("--hermes-url", args.hermes_url), ("--hermes-home", args.hermes_home),
-        ("--state-dir", args.state_dir),
+        ("--gateways-file", args.gateways_file), ("--state-dir", args.state_dir),
     ):
         if value is not None:
             argv.extend([flag, str(value)])

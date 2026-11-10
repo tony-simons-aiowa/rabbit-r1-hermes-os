@@ -21,6 +21,9 @@ export type BotState = "idle" | "busy" | "ask";
 
 export type Bot = {
   id: string;
+  /** Gateway owning this bot. Older bridges omit these fields and imply `local`. */
+  gateway_id?: string;
+  gateway_name?: string;
   name: string;
   title: string;
   description: string;
@@ -54,6 +57,21 @@ export type Message = {
 };
 
 export type AskChoice = { id: string; label: string };
+
+export type FleetAsk = {
+  t: "ask";
+  request_id: string;
+  kind: "approval" | "clarify";
+  title: string;
+  detail: string;
+  choices: AskChoice[];
+};
+
+export type FleetData = {
+  needs_you: Array<{ turn_id: string; bot_id: string; ask: FleetAsk }>;
+  working: Array<{ turn_id: string; bot_id: string }>;
+  gateways: Array<{ id: string; name: string; status: "online" | "offline" | "unknown" }>;
+};
 
 export type TurnEvent = { seq: number } & (
   | { t: "start"; session_id: string }

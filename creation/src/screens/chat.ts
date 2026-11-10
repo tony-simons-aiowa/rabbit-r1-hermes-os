@@ -293,6 +293,9 @@ export function createChat(botId: string): Screen {
         break;
       }
       case "ask":
+        // A pending turn can continue after its chat is covered or left. Fleet owns the
+        // device-wide ask surface in that case; don't unexpectedly push a sheet over Home.
+        if (!el.classList.contains("on")) break;
         openAsk(e);
         break;
       case "ask_done":

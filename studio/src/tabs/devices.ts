@@ -140,7 +140,27 @@ export function mountDevices(): Tab {
       return;
     }
     const canvas = h("canvas", { class: "qr", role: "img", "aria-label": "Pairing QR code" });
-    const drawn = drawQr(canvas, JSON.stringify(p.qr));
+    const payload = JSON.stringify(p.qr);
+    const drawn = drawQr(canvas, payload);
+    const portrait = new Image();
+    let portraitVisible = false;
+    const togglePortrait = button("Show plain QR", () => {
+      if (portraitVisible) {
+        drawQr(canvas, payload);
+        portraitVisible = false;
+      } else {
+        portraitVisible = drawQr(canvas, payload, portrait);
+      }
+      togglePortrait.textContent = portraitVisible ? "Show plain QR" : "Show Nous Girl QR";
+    }, { variant: "ghost" });
+    togglePortrait.hidden = true;
+    if (drawn) {
+      portrait.onload = () => {
+        portraitVisible = drawQr(canvas, payload, portrait);
+        togglePortrait.hidden = !portraitVisible;
+      };
+      portrait.src = new URL("../nous-girl.png", document.baseURI).href;
+    }
     const link = h("input", {
       type: "text",
       readonly: true,
@@ -172,6 +192,7 @@ export function mountDevices(): Tab {
             h("li", null, "Open Hermes when the R1 asks."),
           ),
           h("div", { class: "link-row" }, link, copy),
+          togglePortrait,
           button("New code", () => void doPair(), { variant: "ghost" }),
         ),
       ),

@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import tempfile
+import time
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any
@@ -51,7 +52,19 @@ APP_STATIC = web.AppKey("static_dir", Path)
 APP_ALLOW_REMOTE = web.AppKey("allow_remote_admin", bool)
 APP_VERSION = web.AppKey("version", str)
 APP_LOCAL_URL = web.AppKey("local_url", str)
+APP_BASE_PATH = web.AppKey("base_path", str)
 APP_AVATAR_CACHE = web.AppKey("avatar_cache", OrderedDict)
+APP_FLEET_CACHE = web.AppKey("fleet_gateway_cache", dict)
+APP_FLEET_LOCK = web.AppKey("fleet_gateway_lock", asyncio.Lock)
+
+
+def _app_path(request: web.Request) -> str:
+    return request.path
+
+
+def _request_base_path(request: web.Request) -> str:
+    """Return the public mount path when a reverse proxy forwards to local root."""
+    return request.app[APP_BASE_PATH] if not is_local_request(request) else ""
 
 
 # ---- errors and headers ------------------------------------------------
@@ -65,7 +78,8 @@ _HTTP_CODES = {404: "not_found", 405: "method_not_allowed", 413: "too_large"}
 
 @web.middleware
 async def error_middleware(request: web.Request, handler: Any) -> web.StreamResponse:
-    api = request.path.startswith("/api/")
+    path = _app_path(request)
+    api = path.startswith("/api/")
     try:
         response = await handler(request)
     except HostError as exc:
@@ -114,7 +128,7 @@ def _require_admin(request: web.Request) -> None:
 
 @web.middleware
 async def auth_middleware(request: web.Request, handler: Any) -> web.StreamResponse:
-    path = request.path
+    path = _app_path(request)
     if path.startswith("/api/v1/admin/"):
         _require_admin(request)
     elif path.startswith("/api/v1/") and path not in PUBLIC_API and not path.startswith("/api/v1/assets/"):
@@ -198,7 +212,7 @@ def _newer_last(host_last: Json | None, mine: Json | None) -> Json | None:
     return host_last
 
 
-def _avatar_view(bot: Json, override: Json | None, secret: str) -> Json:
+def _avatar_view(bot: Json, override: Json | None, secret: str, base_path: str = "") -> Json:
     bot_id = bot["id"]
     avatar = dict(bot.get("avatar") or {})
     avatar.setdefault("kind", "shape")
@@ -207,18 +221,19 @@ def _avatar_view(bot: Json, override: Json | None, secret: str) -> Json:
     if override:
         avatar.update({k: v for k, v in override.items() if k in ("shape", "color")})
     avatar["url"] = (
-        signed_url(secret, f"/api/v1/assets/avatar/{bot_id}") if avatar["kind"] == "image" else ""
+        signed_url(secret, f"{base_path}/api/v1/assets/avatar/{bot_id}") if avatar["kind"] == "image" else ""
     )
     return avatar
 
 
-def _pet_view(bot_id: str, pet: Json | None, secret: str) -> Json | None:
+def _pet_view(bot_id: str, pet: Json | None, secret: str, base_path: str = "") -> Json | None:
     if pet is None:
         return None
-    return {**pet, "url": signed_url(secret, f"/api/v1/assets/pet/{bot_id}")}
+    return {**pet, "url": signed_url(secret, f"{base_path}/api/v1/assets/pet/{bot_id}")}
 
 
-async def _bots_view(app: web.Application) -> list[Json]:
+async def _bots_view(request: web.Request) -> list[Json]:
+    app = request.app
     host: Any = app[APP_HOST]
     store: Store = app[APP_STORE]
     turns: TurnManager = app[APP_TURNS]
@@ -232,8 +247,9 @@ async def _bots_view(app: web.Application) -> list[Json]:
         bot["state"] = overlay["state"]
         bot["active"] = overlay["active"]
         bot["last"] = _newer_last(bot.get("last"), overlay["last"])
-        bot["avatar"] = _avatar_view(bot, overrides.get(bot_id), secret)
-        bot["pet"] = _pet_view(bot_id, bot.get("pet"), secret)
+        base_path = _request_base_path(request)
+        bot["avatar"] = _avatar_view(bot, overrides.get(bot_id), secret, base_path)
+        bot["pet"] = _pet_view(bot_id, bot.get("pet"), secret, base_path)
         out.append(bot)
     return out
 
@@ -279,14 +295,46 @@ async def bootstrap(request: web.Request) -> web.Response:
         "device": {"id": device["id"], "name": device["name"]},
         "config": store.get_config(),
         "config_rev": store.config_rev,
-        "bots": await _bots_view(app),
+        "bots": await _bots_view(request),
         "voice": {"stt": bool(caps.get("stt")), "tts": bool(caps.get("tts"))},
     })
 
 
 async def list_bots(request: web.Request) -> web.Response:
     store: Store = request.app[APP_STORE]
-    return web.json_response({"bots": await _bots_view(request.app), "config_rev": store.config_rev})
+    return web.json_response({"bots": await _bots_view(request), "config_rev": store.config_rev})
+
+
+async def fleet(request: web.Request) -> web.Response:
+    """Compact device-owned Fleet Now projection plus safe gateway reachability."""
+    host: Any = request.app[APP_HOST]
+    now = time.monotonic()
+    cache = request.app[APP_FLEET_CACHE]
+    if now - cache["at"] < 3.0:
+        gateways = [dict(g) for g in cache["gateways"]]
+    else:
+        async with request.app[APP_FLEET_LOCK]:
+            cache = request.app[APP_FLEET_CACHE]
+            if time.monotonic() - cache["at"] < 3.0:
+                gateways = [dict(g) for g in cache["gateways"]]
+            elif callable(getattr(host, "fleet_gateways", None)):
+                try:
+                    gateways = await host.fleet_gateways()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    log.warning("gateway status collection failed", exc_info=True)
+                    gateways = [{"id": "local", "name": "Local", "status": "unknown"}]
+                cache.update(at=time.monotonic(), gateways=gateways)
+            elif getattr(host, "mock", False):
+                gateways = [{"id": "local", "name": "Local", "status": "online"}]
+                cache.update(at=time.monotonic(), gateways=gateways)
+            else:
+                gateways = [{"id": "local", "name": "Local", "status": "unknown"}]
+                cache.update(at=time.monotonic(), gateways=gateways)
+    turns: TurnManager = request.app[APP_TURNS]
+    needs_you, working = turns.fleet_state(request[REQ_DEVICE]["id"])
+    return web.json_response({"needs_you": needs_you, "working": working, "gateways": gateways})
 
 
 async def list_sessions(request: web.Request) -> web.Response:
@@ -312,7 +360,7 @@ async def start_turn(request: web.Request) -> web.Response:
         raise HostError("bad_request", "session_id must be a string or null.", 400)
     speak = body.get("speak") is True
     turn = await turns.start(request[REQ_DEVICE]["id"], request.match_info["bot"],
-                             session_id or None, text.strip(), speak)
+                             session_id or None, text.strip(), speak, _request_base_path(request))
     return web.json_response({"turn_id": turn.id, "session_id": turn.session_id})
 
 
@@ -478,7 +526,8 @@ async def asset(request: web.Request) -> web.StreamResponse:
         exp = int(request.query.get("exp", ""))
     except ValueError:
         raise HostError("unauthorized", "Asset link is invalid.", 401)
-    if not verify_asset(store.signing_secret, request.path, exp, request.query.get("sig", "")):
+    signed_path = f"{_request_base_path(request)}{request.path}"
+    if not verify_asset(store.signing_secret, signed_path, exp, request.query.get("sig", "")):
         raise HostError("unauthorized", "Asset link is invalid or expired.", 401)
     kind = request.match_info["kind"]
     name = request.match_info["name"]
@@ -510,7 +559,7 @@ async def admin_state(request: web.Request) -> web.Response:
         "config": store.get_config(),
         "config_rev": store.config_rev,
         "devices": devices,
-        "bots": await _bots_view(app),
+        "bots": await _bots_view(request),
         "public_url": store.public_url,
         "local_url": app[APP_LOCAL_URL],
         "voice": {"stt": bool(caps.get("stt")), "tts": bool(caps.get("tts"))},
@@ -542,7 +591,7 @@ async def admin_pair(request: web.Request) -> web.Response:
             "title": "Hermes",
             "url": url,
             "description": "Hermes Agent for rabbit r1",
-            "iconUrl": f"{public}/icon.png",
+            "iconUrl": f"{public}/nous-girl.png",
             "themeColor": "#4a84fe",
         },
     })
@@ -585,7 +634,7 @@ async def admin_inbox(request: web.Request) -> web.Response:
 
 # ---- static apps -------------------------------------------------------
 
-def _static_response(root: Path, rel: str) -> web.StreamResponse:
+def _static_response(root: Path, rel: str, *, asset_base: str = "", api_base: str = "") -> web.StreamResponse:
     if not (root / "index.html").is_file():
         return web.Response(text=NOT_BUILT_HTML, content_type="text/html",
                             headers={"Cache-Control": "no-cache"})
@@ -596,7 +645,13 @@ def _static_response(root: Path, rel: str) -> web.StreamResponse:
     target = (base / rel).resolve()
     if not target.is_relative_to(base) or not target.is_file():
         raise web.HTTPNotFound()
-    response = web.FileResponse(target)
+    if target.name == "index.html":
+        html = target.read_text(encoding="utf-8")
+        html = html.replace("__R1_API_BASE__", api_base)
+        html = html.replace("</head>", f'<base href="{asset_base}"></head>')
+        response = web.Response(text=html, content_type="text/html")
+    else:
+        response = web.FileResponse(target)
     if target.suffix == ".html":
         response.headers["Cache-Control"] = "no-cache"
     return response
@@ -606,15 +661,19 @@ async def serve_app(request: web.Request) -> web.StreamResponse:
     rel = request.match_info.get("path", "")
     if rel == "api" or rel.startswith("api/"):
         raise HostError("not_found", "Unknown API route.", 404)
-    return _static_response(request.app[APP_STATIC] / "app", rel)
+    base = _request_base_path(request)
+    return _static_response(request.app[APP_STATIC] / "app", rel, asset_base=f"{base}/" if base else "./", api_base=base)
 
 
 async def serve_studio(request: web.Request) -> web.StreamResponse:
-    return _static_response(request.app[APP_STATIC] / "studio", request.match_info.get("path", ""))
+    base = _request_base_path(request)
+    return _static_response(request.app[APP_STATIC] / "studio", request.match_info.get("path", ""),
+                             asset_base=f"{base}/studio/" if base else "./", api_base=base)
 
 
 async def studio_redirect(request: web.Request) -> web.StreamResponse:
-    raise web.HTTPFound("/studio/")
+    base = _request_base_path(request)
+    raise web.HTTPFound(f"{base}/studio/")
 
 
 # ---- lifecycle and factory --------------------------------------------
@@ -634,6 +693,7 @@ def _add_routes(app: web.Application) -> None:
     r.add_post("/api/v1/pair", pair)
     r.add_get("/api/v1/bootstrap", bootstrap)
     r.add_get("/api/v1/bots", list_bots)
+    r.add_get("/api/v1/fleet", fleet)
     r.add_get("/api/v1/bots/{bot}/sessions", list_sessions)
     r.add_get("/api/v1/bots/{bot}/sessions/{sid}/messages", list_messages)
     r.add_post("/api/v1/bots/{bot}/turns", start_turn)
@@ -664,6 +724,7 @@ def create_app(
     *,
     static_dir: Path,
     allow_remote_admin: bool = False,
+    base_path: str = "",
     version: str = "0.1.0",
 ) -> web.Application:
     """Build the bridge application. ``host`` and ``store`` are owned by the caller."""
@@ -679,7 +740,10 @@ def create_app(
     app[APP_ALLOW_REMOTE] = allow_remote_admin
     app[APP_VERSION] = version
     app[APP_LOCAL_URL] = ""
+    app[APP_BASE_PATH] = base_path.rstrip("/")
     app[APP_AVATAR_CACHE] = OrderedDict()
+    app[APP_FLEET_CACHE] = {"at": 0.0, "gateways": []}
+    app[APP_FLEET_LOCK] = asyncio.Lock()
     app.on_startup.append(_on_startup)
     app.on_cleanup.append(_on_cleanup)
     _add_routes(app)
