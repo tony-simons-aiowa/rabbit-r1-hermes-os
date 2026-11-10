@@ -8,6 +8,7 @@ import { row } from "./base";
 export function openType(opts: {
   title: string;
   placeholder?: string;
+  maxLength?: number;
   quick?: { label: string; text: string }[];
   onSend: (text: string) => void;
 }): void {
@@ -19,7 +20,7 @@ export function openType(opts: {
     placeholder: opts.placeholder || "Type a message",
     autocomplete: "off",
     autocapitalize: "sentences",
-    maxlength: 2000,
+    maxlength: opts.maxLength ?? 2000,
   });
   el.appendChild(h("div", { class: "type-field" }, input));
   const list = new List(h("div", { class: "type-list" }), (i) => activate(i));

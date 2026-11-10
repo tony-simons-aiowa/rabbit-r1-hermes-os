@@ -68,6 +68,7 @@ class Store:
             "config": copy.deepcopy(DEFAULT_CONFIG),
             "config_rev": 1,
             "devices": {},
+            "groups": {},
             "inbox": [],
             "inbox_next_id": 1,
             "inbox_offset": 0,
@@ -227,8 +228,29 @@ class Store:
         with self._lock:
             if self._data["devices"].pop(device_id, None) is None:
                 return False
+            self._data["groups"].pop(device_id, None)
             self._save()
             return True
+
+    def group_rooms(self, device_id: str) -> dict[str, Any]:
+        with self._lock:
+            return copy.deepcopy(self._data["groups"].get(device_id, {}))
+
+    def save_group(self, device_id: str, room: dict[str, Any]) -> None:
+        with self._lock:
+            if device_id not in self._data["devices"]:
+                return
+            rooms = self._data["groups"].setdefault(device_id, {})
+            previous = rooms.get(room["id"])
+            rooms[room["id"]] = copy.deepcopy(room)
+            try:
+                self._save()
+            except OSError:
+                if previous is None:
+                    rooms.pop(room["id"])
+                else:
+                    rooms[room["id"]] = previous
+                raise
 
     # ---- inbox -------------------------------------------------------
 

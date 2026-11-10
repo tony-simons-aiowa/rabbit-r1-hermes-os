@@ -19,6 +19,19 @@ export type Pet = {
 
 export type BotState = "idle" | "busy" | "ask";
 
+export type GroupSummary = {
+  id: string;
+  name: string;
+  members: Array<{ id: string; name: string; gateway: string }>;
+};
+
+export type GroupChat = GroupSummary & {
+  rounds: Array<{
+    text: string;
+    replies: Array<{ bot: string; status: "pending" | "completed" | "failed" | "cancelled"; text: string; error: string }>;
+  }>;
+};
+
 export type Bot = {
   id: string;
   /** Gateway owning this bot. Older bridges omit these fields and imply `local`. */

@@ -6,12 +6,12 @@ import { renderAvatar, setAvatarState, renderPet, petMoodFor } from "../../../sh
 import type { Bot } from "../../../shared/protocol";
 import { state, subscribe, orderedBots, rememberBot, availableGateways, selectedGateway, rememberGateway, gatewayId } from "../state";
 import { refreshChrome, toast } from "../chrome";
-import { openChat, openInbox, openFleet, openSettings, talk, flags } from "../app";
+import { openChat, openInbox, openFleet, openGroups, openSettings, talk, flags } from "../app";
 import { canTalk } from "./listening";
 
 const PET_HEIGHT = 30;
 
-type Item = { kind: "bot"; bot: Bot } | { kind: "gateway" } | { kind: "fleet" } | { kind: "inbox" } | { kind: "settings" };
+type Item = { kind: "bot"; bot: Bot } | { kind: "gateway" } | { kind: "fleet" } | { kind: "groups" } | { kind: "inbox" } | { kind: "settings" };
 
 export function createHome(): Screen {
   const el = h("div", { class: "scr home" });
@@ -71,6 +71,7 @@ export function createHome(): Screen {
       return;
     }
     if (it.kind === "fleet") return openFleet();
+    if (it.kind === "groups") return openGroups();
     if (it.kind === "inbox") return openInbox();
     if (it.kind === "settings") return openSettings();
     if (!it.bot.reachable) return toast(it.bot.locked_reason || "This bot is locked");
@@ -99,7 +100,7 @@ export function createHome(): Screen {
     greet.style.display = state.config.home.greeting ? "" : "none";
 
     items = bots.map((b): Item => ({ kind: "bot", bot: b }));
-    items.unshift({ kind: "fleet" });
+    items.unshift({ kind: "fleet" }, { kind: "groups" });
     if (gateways.length > 1) items.unshift({ kind: "gateway" });
     if (nIn) items.push({ kind: "inbox" });
     items.push({ kind: "settings" });
@@ -126,6 +127,11 @@ export function createHome(): Screen {
       if (it.kind === "fleet") {
         avatars.push(null);
         return h("div", { class: "row hrow special fleet-entry" }, h("div", { class: "row-main" }, h("div", { class: "row-t" }, "Fleet Now"), h("div", { class: "row-s" }, "Needs You · Working · Gateways")));
+      }
+      if (it.kind === "groups") {
+        avatars.push(null);
+        return h("div", { class: "row hrow special" }, h("div", { class: "row-main" },
+          h("div", { class: "row-t" }, "Group Chats"), h("div", { class: "row-s" }, "Talk with multiple bots")));
       }
       if (it.kind === "inbox") {
         avatars.push(null);

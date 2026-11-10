@@ -500,3 +500,51 @@ async def test_path_mounted_bridge_proxy_strips_prefix(aiohttp_client, store, st
     assert (await client.get("/api/v1/bots", headers=funnel)).status == 401
     local_page = await client.get("/")
     assert '<base href="./">' in await local_page.text()
+
+
+async def test_group_round_shares_previous_replies_and_is_device_owned(aiohttp_client, store, static_dir):
+    class RecordingHost(MockHost):
+        def __init__(self):
+            super().__init__(speed=0)
+            self.prompts = []
+
+        async def run_turn(self, bot_id, session_id, text):
+            self.prompts.append((bot_id, session_id, text))
+            return await super().run_turn(bot_id, session_id, text)
+
+    host = RecordingHost()
+    client = await aiohttp_client(create_app(host, store, static_dir=static_dir))
+    owner = await pair_device(client, store)
+    other = await pair_device(client, store, "other")
+    create = await client.post("/api/v1/groups", headers=owner,
+                               json={"name": "Panel", "bots": ["default", "coder"]})
+    assert create.status == 201
+    room_id = (await create.json())["id"]
+    path = f"/api/v1/groups/{room_id}"
+    assert (await client.get(path, headers=other)).status == 404
+    assert (await client.post(path + "/messages", headers=other, json={"text": "Hi"})).status == 404
+
+    async def complete(text):
+        response = await client.post(path + "/messages", headers=owner, json={"text": text})
+        assert response.status == 202
+        async with asyncio.timeout(2):
+            while True:
+                room = await (await client.get(path, headers=owner)).json()
+                replies = room["rounds"][-1]["replies"]
+                if all(reply["status"] != "pending" for reply in replies):
+                    assert [reply["status"] for reply in replies] == ["completed", "completed"]
+                    return room
+                await asyncio.sleep(0.01)
+
+    first = await complete("First round")
+    await complete("Second round")
+    assert {bot for bot, _, _ in host.prompts[2:]} == {"default", "coder"}
+    for _, sid, prompt in host.prompts[2:]:
+        assert sid is None
+        assert "First round" in prompt and prompt.endswith("Second round")
+        context = prompt.split("Recent transcript: ", 1)[1].split("\n\nCurrent user message:", 1)[0]
+        assert json.loads(context)[0]["replies"][0]["text"] == first["rounds"][0]["replies"][0]["text"][:400]
+
+    reopened = Store(store.state_dir)
+    owner_id = reopened.device_for_token(owner["Authorization"].split()[1])["id"]
+    assert len(reopened.group_rooms(owner_id)[room_id]["rounds"]) == 2
