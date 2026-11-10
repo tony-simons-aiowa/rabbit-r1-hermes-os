@@ -937,6 +937,15 @@ input[aria-invalid="true"] {
   color: var(--muted);
 }
 
+.gateway-badge {
+  font-size: 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 6px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
 .lock {
   font-size: 13px;
   cursor: help;

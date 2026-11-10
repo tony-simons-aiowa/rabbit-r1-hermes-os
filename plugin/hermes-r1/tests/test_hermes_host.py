@@ -89,6 +89,8 @@ class FakeHermes:
             ]})
         if request.method == "POST" and path == "/api/sessions":
             self.created_titles.append(body.get("title"))
+            if self.mode == "duplicate_title" and "title" in body:
+                return web.json_response({"error": {"code": "invalid_title"}}, status=400)
             return web.json_response(FIXTURE_SESSION)
         if request.method == "GET" and re.fullmatch(r"/api/sessions/[^/]+/messages", path):
             return web.json_response(FIXTURE_MESSAGES)
@@ -115,7 +117,7 @@ class FakeHermes:
     async def stream(self, request: web.Request) -> web.StreamResponse:
         resp = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
         await resp.prepare(request)
-        if self.mode == "fixture":
+        if self.mode in ("fixture", "duplicate_title"):
             for index in range(0, len(FIXTURE_SSE), 37):  # trickle the bytes to exercise incremental parsing
                 await resp.write(FIXTURE_SSE[index:index + 37])
                 await asyncio.sleep(0)
@@ -426,6 +428,15 @@ async def test_run_turn_creates_session(host: HermesHost, fake) -> None:  # type
     assert hermes.created_titles == [text[:40]]
     events = await _collect(handle)
     assert events[-1]["t"] == "end" and events[-1]["status"] == "completed"
+
+
+async def test_new_turn_retries_without_duplicate_title(host: HermesHost, fake) -> None:
+    hermes, _ = fake
+    hermes.mode = "duplicate_title"
+    handle = await host.run_turn("default", None, "Repeat this quick prompt")
+    assert hermes.created_titles == ["Repeat this quick prompt", None]
+    assert hermes.chat_inputs == ["Repeat this quick prompt"]
+    assert (await _collect(handle))[-1]["status"] == "completed"
 
 
 async def test_upstream_auth_failure(home: Path, fake) -> None:  # type: ignore[no-untyped-def]

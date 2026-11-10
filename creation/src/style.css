@@ -219,6 +219,77 @@ textarea {
   text-overflow: ellipsis;
 }
 
+/* Fleet Now: compact sectioned view sized for the R1's 240×282 display. */
+.fleet-head {
+  flex: none;
+  height: 25px;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+.fleet-back,
+.fleet-refresh {
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font: inherit;
+  font-size: calc(10px * var(--fs));
+  min-width: 42px;
+  height: 24px;
+  padding: 0 7px;
+}
+.fleet-title {
+  flex: 1;
+  text-align: center;
+  color: var(--fg);
+  font-size: calc(11px * var(--fs));
+  font-weight: 650;
+}
+.fleet-summary {
+  flex: none;
+  height: 18px;
+  padding: 2px 9px 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  font-size: calc(9px * var(--fs));
+}
+.fleet-list {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+.fleet-section {
+  height: 20px;
+  padding: 5px 9px 2px;
+  color: var(--primary);
+  font-size: calc(9px * var(--fs));
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+.fleet-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 37px;
+  padding: 4px 9px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  font-size: calc(10px * var(--fs));
+}
+.fleet-row.hl { background: var(--accent); }
+.fleet-row-main { flex: 1; min-width: 0; }
+.fleet-row-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 600; }
+.fleet-row-sub { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); font-size: calc(8.5px * var(--fs)); margin-top: 1px; }
+.fleet-chevron { color: var(--muted); font-size: 16px; }
+.fleet-status { flex: none; font-size: calc(8px * var(--fs)); text-transform: capitalize; }
+.fleet-status.online { color: var(--ok); }
+.fleet-status.offline { color: var(--err); }
+.fleet-status.unknown { color: var(--muted); }
+
 .empty {
   padding: 36px 14px;
   text-align: center;

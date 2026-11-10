@@ -10,6 +10,7 @@ import { createChat, activeChat } from "./screens/chat";
 import { openListening } from "./screens/listening";
 import { createSessions } from "./screens/sessions";
 import { createInbox } from "./screens/inbox";
+import { createFleet } from "./screens/fleet";
 import { createSettings } from "./screens/settings";
 import { createDiagnostics } from "./screens/diagnostics";
 
@@ -48,6 +49,10 @@ export function openInbox(): void {
   push(createInbox());
 }
 
+export function openFleet(): void {
+  push(createFleet());
+}
+
 export function openSettings(): void {
   push(createSettings());
 }
@@ -66,7 +71,7 @@ export async function unpair(): Promise<void> {
   state.token = "";
   state.bootstrap = null;
   state.bots = [];
-  state.prefs = { lastBot: "", sessions: {} };
+  state.prefs = { lastBot: "", sessions: {}, gatewayId: "" };
   openPair("Unpaired. Scan the QR code in Studio to pair again.");
 }
 

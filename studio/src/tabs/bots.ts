@@ -219,6 +219,7 @@ export function mountBots(): Tab {
             { class: "bot-name" },
             name,
             b.is_default ? h("span", { class: "badge" }, "default") : null,
+            h("span", { class: "gateway-badge", title: "Served by gateway " + (b.gateway_id || "local") }, b.gateway_name || (b.gateway_id === "local" || !b.gateway_id ? "Local" : b.gateway_id)),
           ),
           h("div", { class: "bot-sub" }, [id, b.title, b.model].filter(Boolean).join(" · ")),
           status,
@@ -325,7 +326,7 @@ export function mountBots(): Tab {
     const a = getAdmin();
     const d = getDraft();
     const order = currentOrder();
-    const nextSig = JSON.stringify([order, a.bots.map((b) => [b.id, b.name, b.title, b.model, b.is_default, b.avatar.kind])]);
+    const nextSig = JSON.stringify([order, a.bots.map((b) => [b.id, b.name, b.title, b.model, b.is_default, b.avatar.kind, b.gateway_id, b.gateway_name])]);
     if (nextSig !== sig) {
       sig = nextSig;
       rebuild();
@@ -348,7 +349,7 @@ export function mountBots(): Tab {
       h(
         "p",
         { class: "muted" },
-        "Hidden bots don't appear on the R1. Use ▲ ▼ to set the order. Expand Avatar to change the shape and color.",
+        "Hidden bots don't appear on the R1. Use ▲ ▼ to set the order. Expand Avatar to change the shape and color. Remote gateways are configured with hermes r1 serve --gateways-file.",
       ),
       empty,
       listEl,

@@ -21,7 +21,8 @@ Studio (browser on your computer) ──▶ bridge
 
 ## Features
 
-- **Bot roster** — every Hermes profile is a bot, with its Bot Mode avatar (shape + color, or uploaded photo), status dot, last reply and an "Active now" strip.
+- **Bot roster** — every local Hermes profile is a bot, with its Bot Mode avatar (shape + color, or uploaded photo), status dot, last reply and an "Active now" strip. Add gateways to chat with agents on other machines from the same R1.
+- **Fleet Now** — see gateway health and the active turns from this device across gateways. Open a pending approval or question and answer it from the same screen.
 - **Animated avatars** — the geometric faces from Hermes Desktop: they blink when idle and think while a turn runs. Pets (petdex sprites you have installed) sit beside the highlighted bot.
 - **Streaming chat** — markdown, code blocks, live tool chips, mid-turn commentary, stop.
 - **Approvals and questions** — when Hermes needs a decision it appears as a sheet you answer with the wheel.
@@ -64,14 +65,43 @@ Open the `studio:` link it prints. The emulator on the right is the real R1 app 
    ```bash
    hermes r1 serve --tunnel tailscale
    ```
-   `--tunnel tailscale` (Tailscale Funnel) gives a stable address and is recommended. `--tunnel cloudflared` gives a temporary address that changes on every restart, so you would have to re-add the app each time. You can also pass `--public-url https://…` if you run your own reverse proxy.
+   `--tunnel tailscale` (Tailscale Funnel) gives a stable address and mounts this bridge at `/r1` on port `10000`, preserving other routes on that listener. It removes only the `/r1` route when the bridge exits. `--tunnel cloudflared` gives a temporary address that changes on every restart, so you would have to re-add the app each time. You can also pass `--public-url https://…` if you run your own reverse proxy; use `--base-path /r1` when mounting behind a path prefix.
 6. **Pair your R1** — open the `studio:` link printed by the bridge, go to **Devices → Pair a device**, and scan the QR code with the R1.
+
+### Add another Hermes gateway
+
+Keep the bridge and pairing you already use. On the bridge machine, create a JSON file for the additional gateways:
+
+```json
+[
+  {
+    "id": "workshop",
+    "name": "Workshop",
+    "url": "https://hermes.workshop.example",
+    "key_env": "WORKSHOP_HERMES_API_KEY"
+  }
+]
+```
+
+Set `WORKSHOP_HERMES_API_KEY` in the environment that launches the bridge, using the API server key from Workshop. The JSON file names the environment variable and contains no secret. Use an HTTPS URL the bridge machine can reach; plain HTTP is allowed only on loopback. Keep each `id` stable for that gateway, and use a new ID if you replace it with a different gateway.
+
+Restart the bridge with your usual options plus `--gateways-file /path/to/gateways.json`:
+
+```bash
+hermes r1 serve --tunnel tailscale --gateways-file /path/to/gateways.json
+```
+
+Each additional gateway adds its default profile to the roster. To add named profiles from a gateway with `gateway.multiplex_profiles` enabled, give that gateway a `"profiles"` object such as `{"linux-dev": {"name": "Linux Dev", "key_env": "WORKSHOP_DEV_API_KEY"}}`. Each named profile uses its own API key. The primary gateway discovers its profiles and avatars from the local Hermes installation. Voice uses the bridge machine's Hermes setup for all chats.
+
+On the R1 home roster, select the **Gateway** row to cycle between gateways. The R1 remembers the last gateway you chose. You can try the same controls in Studio's live preview.
+
+Each paired device can access every gateway configured on its bridge. Add only gateways you want those devices to use.
 
 ## Security model
 
 The bridge can drive an agent that controls your computer, and the tunnel makes it reachable from the internet. So:
 
-- The R1 holds only a random device token (stored hashed on the bridge). Hermes API keys never leave the bridge.
+- The R1 holds only a random device token (stored hashed on the bridge). Only the bridge sends Hermes API keys to the configured upstreams; the R1 and Studio never receive them.
 - Pairing codes are single-use and expire after 10 minutes.
 - Studio's admin API needs the admin token **and** only answers requests that arrive directly on loopback with a loopback `Host` — it is not reachable through the tunnel unless you start the bridge with `--allow-remote-admin`.
 - Images and audio are served through short-lived signed URLs.

@@ -37,12 +37,14 @@ class Turn:
     session_id: str
     device_id: str
     speak: bool
+    audio_base_path: str = ""
     events: list[Json] = field(default_factory=list)
     done: bool = False
     finishing: bool = False
     ended: float | None = None
     text_parts: list[str] = field(default_factory=list)
-    pending_asks: set[str] = field(default_factory=set)
+    pending_asks: dict[str, Json] = field(default_factory=dict)
+    responding_asks: set[str] = field(default_factory=set)
     resolved_asks: set[str] = field(default_factory=set)
     waiters: list[asyncio.Future[None]] = field(default_factory=list)
     task: asyncio.Task[None] | None = None
@@ -96,6 +98,7 @@ class TurnManager:
         session_id: str | None,
         text: str,
         speak: bool,
+        audio_base_path: str = "",
     ) -> Turn:
         self._prune()
         key = (device_id, bot_id)
@@ -112,6 +115,7 @@ class TurnManager:
             session_id=handle.session_id,
             device_id=device_id,
             speak=speak,
+            audio_base_path=audio_base_path.rstrip("/"),
             handle=handle,
         )
         self._turns[turn.id] = turn
@@ -202,7 +206,13 @@ class TurnManager:
         if kind == "delta" and isinstance(raw.get("text"), str):
             turn.text_parts.append(raw["text"])
         elif kind == "ask" and isinstance(raw.get("request_id"), str):
-            turn.pending_asks.add(raw["request_id"])
+            request_id = raw["request_id"]
+            # Keep the current prompt independently of the replayable event log.
+            turn.pending_asks[request_id] = {
+                "t": "ask", "request_id": request_id,
+                "kind": raw.get("kind", "clarify"), "title": raw.get("title", "Question"),
+                "detail": raw.get("detail", ""), "choices": raw.get("choices", []),
+            }
         elif kind == "ask_done":
             if not self._resolve_ask(turn, raw.get("request_id")):
                 return
@@ -213,7 +223,8 @@ class TurnManager:
         if not isinstance(request_id, str) or request_id in turn.resolved_asks:
             return False
         turn.resolved_asks.add(request_id)
-        turn.pending_asks.discard(request_id)
+        turn.pending_asks.pop(request_id, None)
+        turn.responding_asks.discard(request_id)
         return True
 
     async def _finish(
@@ -231,7 +242,7 @@ class TurnManager:
         try:
             final = text if text is not None else "".join(turn.text_parts)
             if status == "completed" and turn.speak and final.strip():
-                speech = await self._speech_event(final)
+                speech = await self._speech_event(final, turn.audio_base_path)
                 if speech is not None:
                     self._append(turn, speech)
             self._record_last(turn, status, final)
@@ -253,7 +264,7 @@ class TurnManager:
         if status == "completed" and one_line:
             self._last[turn.bot_id] = {"text": one_line[:80], "ts": now}
 
-    async def _speech_event(self, text: str) -> Json | None:
+    async def _speech_event(self, text: str, base_path: str = "") -> Json | None:
         """Synthesize ``text``; returns a ``speech`` event or None. Never raises."""
         try:
             caps = self.host.voice_capabilities()
@@ -264,7 +275,7 @@ class TurnManager:
             log.warning("text to speech failed", exc_info=True)
             return None
         audio_id = self.register_audio(asset)
-        return {"t": "speech", "url": self.audio_url(audio_id), "mime": asset.content_type}
+        return {"t": "speech", "url": self.audio_url(audio_id, base_path), "mime": asset.content_type}
 
     # ---- audio ---------------------------------------------------------
 
@@ -279,8 +290,8 @@ class TurnManager:
         entry = self._audio.get(audio_id)
         return entry[0] if entry else None
 
-    def audio_url(self, audio_id: str) -> str:
-        return signed_url(self.store.signing_secret, f"/api/v1/assets/audio/{audio_id}")
+    def audio_url(self, audio_id: str, base_path: str = "") -> str:
+        return signed_url(self.store.signing_secret, f"{base_path.rstrip('/')}/api/v1/assets/audio/{audio_id}")
 
     # ---- actions -------------------------------------------------------
 
@@ -312,9 +323,33 @@ class TurnManager:
             raise HostError("turn_finished", "This turn has already finished.", 409)
         if request_id not in turn.pending_asks:
             raise HostError("not_found", "No pending question with that id.", 404)
-        await self.host.respond(turn.bot_id, turn.session_id, request_id, choice=choice, answer=answer)
+        if request_id in turn.responding_asks:
+            raise HostError("ask_responding", "A response to this question is already in progress.", 409)
+        # Claim synchronously before awaiting the upstream so concurrent requests
+        # cannot both resolve a single approval.
+        turn.responding_asks.add(request_id)
+        try:
+            await self.host.respond(turn.bot_id, turn.session_id, request_id, choice=choice, answer=answer)
+        except BaseException:
+            turn.responding_asks.discard(request_id)
+            raise
         if self._resolve_ask(turn, request_id):
             self._append(turn, {"t": "ask_done", "request_id": request_id})
+
+    def fleet_state(self, device_id: str) -> tuple[list[Json], list[Json]]:
+        """Current prompts and working turns owned by one paired device."""
+        self._prune()
+        needs_you: list[Json] = []
+        working: list[Json] = []
+        for turn in self._turns.values():
+            if turn.device_id != device_id or turn.done:
+                continue
+            if turn.pending_asks:
+                needs_you.extend({"turn_id": turn.id, "bot_id": turn.bot_id, "ask": dict(ask)}
+                                 for ask in turn.pending_asks.values())
+            else:
+                working.append({"turn_id": turn.id, "bot_id": turn.bot_id})
+        return needs_you, working
 
     # ---- overlay -------------------------------------------------------
 

@@ -7,7 +7,7 @@ import { getJson, setJson, storage } from "./platform";
 export const TOKEN_KEY = "r1.token";
 const PREFS_KEY = "r1.prefs";
 
-type Prefs = { lastBot: string; sessions: Record<string, string> };
+type Prefs = { lastBot: string; sessions: Record<string, string>; gatewayId?: string };
 
 export const state = {
   api: null as Api | null,
@@ -17,7 +17,7 @@ export const state = {
   config: DEFAULT_CONFIG as DeviceConfig,
   configRev: 0,
   bots: [] as Bot[],
-  prefs: { lastBot: "", sessions: {} } as Prefs,
+  prefs: { lastBot: "", sessions: {}, gatewayId: "" } as Prefs,
   inbox: [] as InboxItem[],
   inboxNext: 0,
   online: true,
@@ -59,7 +59,7 @@ export async function clearToken(): Promise<void> {
 
 export async function loadPrefs(): Promise<void> {
   const p = await getJson<Prefs>(PREFS_KEY, { lastBot: "", sessions: {} });
-  state.prefs = { lastBot: p.lastBot || "", sessions: p.sessions || {} };
+  state.prefs = { lastBot: p.lastBot || "", sessions: p.sessions || {}, gatewayId: p.gatewayId || "" };
 }
 
 export function savePrefs(): void {
@@ -101,6 +101,42 @@ export function orderedBots(): Bot[] {
       if (a.reachable !== b.reachable) return a.reachable ? -1 : 1;
       return a.name.localeCompare(b.name);
     });
+}
+
+export function gatewayId(bot: Bot): string {
+  return bot.gateway_id || "local";
+}
+
+export function gatewayLabel(bot: Bot): string {
+  const id = gatewayId(bot);
+  return id === "local" ? "Local" : bot.gateway_name || id;
+}
+
+export function availableGateways(): Array<{ id: string; name: string }> {
+  const groups = new Map<string, string>();
+  for (const bot of state.bots) {
+    const id = gatewayId(bot);
+    if (!groups.has(id)) groups.set(id, gatewayLabel(bot));
+  }
+  return Array.from(groups, ([id, name]) => ({ id, name })).sort((a, b) =>
+    a.id === "local" ? -1 : b.id === "local" ? 1 : a.name.localeCompare(b.name),
+  );
+}
+
+export function selectedGateway(): string {
+  const gateways = availableGateways();
+  if (!gateways.length) return "local";
+  const remembered = state.prefs.gatewayId;
+  if (remembered && gateways.some((g) => g.id === remembered)) return remembered;
+  const fallback = gateways.find((g) => g.id === "local") || gateways[0];
+  state.prefs.gatewayId = fallback.id;
+  savePrefs();
+  return fallback.id;
+}
+
+export function rememberGateway(id: string): void {
+  state.prefs.gatewayId = id;
+  savePrefs();
 }
 
 export function applyBootstrap(b: Bootstrap): void {

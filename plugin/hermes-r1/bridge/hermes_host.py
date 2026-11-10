@@ -65,6 +65,7 @@ UNAVAILABLE_MESSAGE = "Hermes API server is not reachable. Is `hermes gateway` r
 #: Seconds of stream silence before we poll ``pending_controls`` (module global so tests can shorten it).
 _POLL_INTERVAL = 1.5
 _POLL_TIMEOUT = aiohttp.ClientTimeout(total=5, sock_connect=3)
+_FLEET_PROBE_TIMEOUT = aiohttp.ClientTimeout(total=1.2, sock_connect=0.7)
 _JSON_TIMEOUT = aiohttp.ClientTimeout(total=15, sock_connect=5)
 _STREAM_TIMEOUT = aiohttp.ClientTimeout(total=None, sock_connect=10, sock_read=120)
 _BOTS_TTL = 5.0
@@ -213,6 +214,11 @@ def _content_type(path: Path) -> str:
 
 
 def _status_error(status: int, not_found: str) -> HostError | None:
+    if status < 200 or status >= 300:
+        if status < 300:
+            return HostError("upstream_error", "Hermes API server returned an unexpected response.", 502)
+    if 300 <= status < 400:
+        return HostError("upstream_error", "Hermes API server returned an unexpected redirect.", 502)
     if status < 400:
         return None
     if status in (401, 403):
@@ -635,6 +641,21 @@ class HermesHost:
             self._session = aiohttp.ClientSession()
         return self._session
 
+    async def fleet_probe(self) -> str:
+        """Return only transport reachability for the configured Hermes gateway."""
+        try:
+            async with self._client().get(f"{self._api_url}/health", timeout=_FLEET_PROBE_TIMEOUT,
+                                          allow_redirects=False) as response:
+                return "online" if 200 <= response.status < 300 else "offline"
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            return "offline"
+
+    async def fleet_gateways(self) -> list[Json]:
+        """Safe Fleet Now gateway projection for a single local Hermes host."""
+        return [{"id": "local", "name": "Local", "status": await self.fleet_probe()}]
+
     # ------------------------------------------------------------------ profiles
 
     def _profile_home(self, bot_id: str) -> tuple[Path, bool]:
@@ -755,10 +776,18 @@ class HermesHost:
         headers = {"Authorization": f"Bearer {key}", "Accept": "application/json"}
         try:
             async with self._client().request(
-                method, url, json=body, headers=headers, timeout=timeout,
+                method, url, json=body, headers=headers, timeout=timeout, allow_redirects=False,
             ) as resp:
                 error = _status_error(resp.status, not_found)
                 if error is not None:
+                    if resp.status == 400:
+                        try:
+                            payload = await resp.json(content_type=None)
+                        except (ValueError, aiohttp.ClientError):
+                            payload = None
+                        upstream_error = payload.get("error") if isinstance(payload, dict) else None
+                        if isinstance(upstream_error, dict) and upstream_error.get("code") == "invalid_title":
+                            raise HostError("invalid_title", "Hermes rejected the session title.", 400)
                     raise error
                 try:
                     return await resp.json(content_type=None)
@@ -772,10 +801,11 @@ class HermesHost:
     async def _open_stream(self, url: str, key: str, body: Json) -> aiohttp.ClientResponse:
         headers = {"Authorization": f"Bearer {key}", "Accept": "text/event-stream"}
         try:
-            resp = await self._client().post(url, json=body, headers=headers, timeout=_STREAM_TIMEOUT)
+            resp = await self._client().post(url, json=body, headers=headers, timeout=_STREAM_TIMEOUT,
+                                             allow_redirects=False)
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
             raise HostError("upstream_unavailable", UNAVAILABLE_MESSAGE, 502) from exc
-        if resp.status >= 400:
+        if not 200 <= resp.status < 300:
             resp.close()
             raise _status_error(resp.status, "Session not found.") or HostError(
                 "upstream_error", "Hermes API server refused the turn.", 502)
@@ -822,8 +852,14 @@ class HermesHost:
         return messages[-max(1, int(limit)):]
 
     async def _create_session(self, base: str, key: str, text: str) -> str:
-        data = await self._json_request(
-            "POST", f"{base}/api/sessions", key, body={"title": text.strip()[:40]})
+        url = f"{base}/api/sessions"
+        try:
+            data = await self._json_request("POST", url, key, body={"title": text.strip()[:40]})
+        except HostError as exc:
+            if exc.code != "invalid_title":
+                raise
+            # Hermes rejects duplicate titles before committing the new session.
+            data = await self._json_request("POST", url, key, body={})
         session = data.get("session") if isinstance(data, dict) else None
         if not isinstance(session, dict):
             session = data if isinstance(data, dict) else {}
