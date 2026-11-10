@@ -678,3 +678,29 @@ textarea {
 .dline.bad {
   color: var(--err);
 }
+
+.memory-map {
+  flex: none;
+  width: 100%;
+  height: 74px;
+  border-bottom: 1px solid var(--border);
+}
+
+.memory-map line { stroke: var(--muted); stroke-opacity: .55; }
+.memory-map .skill { fill: var(--primary); }
+.memory-map .memory { fill: var(--warn); }
+
+.memory-node-list {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+.memory-graph .fleet-summary {
+  height: auto;
+  min-height: 18px;
+  padding-bottom: 3px;
+  white-space: normal;
+}

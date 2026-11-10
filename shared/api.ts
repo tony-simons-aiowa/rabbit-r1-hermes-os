@@ -6,6 +6,7 @@ import type {
   DeviceConfig,
   InboxItem,
   FleetData,
+  MemoryGraph,
   Message,
   PairInfo,
   Session,
@@ -86,6 +87,9 @@ export class Api {
   }
   sessions(bot: string, limit = 20) {
     return this.request<{ sessions: Session[] }>("GET", `/bots/${encodeURIComponent(bot)}/sessions?limit=${limit}`);
+  }
+  memoryGraph(bot: string) {
+    return this.request<MemoryGraph>("GET", `/bots/${encodeURIComponent(bot)}/memory-graph`);
   }
   messages(bot: string, sid: string, limit = 30) {
     return this.request<{ messages: Message[] }>(

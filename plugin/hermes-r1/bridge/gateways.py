@@ -205,6 +205,12 @@ class GatewayHost:
         host, local = self._route(bot_id)
         return await host.list_sessions(local, limit)
 
+    async def memory_graph(self, bot_id: str) -> Json:
+        graph = getattr(self.primary, "memory_graph", None)
+        if ":" in bot_id or graph is None:
+            raise HostError("graph_unavailable", "Memory Graph is available for profiles on the bridge host.", 501)
+        return await graph(bot_id)
+
     async def get_messages(self, bot_id: str, session_id: str, limit: int) -> list[Json]:
         host, local = self._route(bot_id)
         return await host.get_messages(local, session_id, limit)

@@ -58,6 +58,12 @@ export type Message = {
 
 export type AskChoice = { id: string; label: string };
 
+export interface MemoryGraph {
+  nodes: { id: string; label: string; kind: "skill" | "memory" }[];
+  edges: { source: string; target: string }[];
+  total: number;
+}
+
 export type FleetAsk = {
   t: "ask";
   request_id: string;

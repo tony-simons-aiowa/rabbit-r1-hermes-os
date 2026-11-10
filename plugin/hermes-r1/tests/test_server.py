@@ -479,6 +479,7 @@ async def test_studio_not_built_and_redirect(client):
 async def test_path_mounted_bridge_proxy_strips_prefix(aiohttp_client, store, static_dir):
     (static_dir / "app" / "index.html").write_text(
         '<!doctype html><head><meta name="r1-api-base" content="__R1_API_BASE__"></head>'
+        '<script src="./app.js"></script>'
     )
     app = create_app(MockHost(speed=0), store, static_dir=static_dir, base_path="/r1")
     client = await aiohttp_client(app)
@@ -489,7 +490,12 @@ async def test_path_mounted_bridge_proxy_strips_prefix(aiohttp_client, store, st
     assert page.status == 200
     assert '<base href="/r1/">' in html
     assert 'name="r1-api-base" content="/r1"' in html
-    assert (await client.get("/app.js", headers=funnel)).status == 200
+    bundle_url = html.split('<script src="./', 1)[1].split('"', 1)[0]
+    assert bundle_url.startswith("app.js?v=")
+    assert (await client.get(f"/{bundle_url}", headers=funnel)).status == 200
+    (static_dir / "app" / "app.js").write_text("console.log('new bundle')")
+    updated = await client.get("/", headers=funnel)
+    assert bundle_url not in await updated.text()
     assert (await client.get("/api/v1/health", headers=funnel)).status == 200
     assert (await client.get("/api/v1/bots", headers=funnel)).status == 401
     local_page = await client.get("/")

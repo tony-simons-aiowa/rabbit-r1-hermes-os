@@ -658,6 +658,12 @@ class HermesHost:
 
     # ------------------------------------------------------------------ profiles
 
+    async def memory_graph(self, bot_id: str) -> Json:
+        from .memory_graph import read_memory_graph
+
+        home, _ = self._profile_home(bot_id)
+        return await asyncio.to_thread(read_memory_graph, home)
+
     def _profile_home(self, bot_id: str) -> tuple[Path, bool]:
         """Resolve a bot id to its profile directory. Rejects anything that is not a bare name."""
         if not _is_safe_segment(bot_id):

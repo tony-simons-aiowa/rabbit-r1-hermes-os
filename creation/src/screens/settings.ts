@@ -7,6 +7,7 @@ import { state } from "../state";
 import { toast } from "../chrome";
 import { applyAppTheme, openDiagnostics, unpair } from "../app";
 import { row, screenEl } from "./base";
+import { openMemoryGraph } from "./memory-graph";
 
 const APP_VERSION = "0.1.0";
 
@@ -46,6 +47,12 @@ export function createSettings(): Screen {
         sub: "Set in Studio",
         right: scale,
         onPick: () => toast("Change font size in Studio"),
+      },
+      {
+        title: "Memory Graph",
+        sub: "Explore learned skills and memory links",
+        right: "›",
+        onPick: openMemoryGraph,
       },
       {
         title: "Diagnostics",
