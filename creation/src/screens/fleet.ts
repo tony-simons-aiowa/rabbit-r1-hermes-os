@@ -1,23 +1,28 @@
 // Device-scoped Fleet overview. The bridge only returns turns belonging to this paired device.
-import type { FleetAsk, FleetData } from "../../../shared/protocol";
-import { h, List } from "../ui";
+import type { FleetAsk, FleetData, FleetFinished } from "../../../shared/protocol";
+import { h, List, relativeTime } from "../ui";
 import type { AppEvent } from "../platform";
 import type { Screen } from "../nav";
 import { pop } from "../nav";
 import { state, botById } from "../state";
-import { guard } from "../app";
+import { guard, openChat } from "../app";
+import { openGroupRoom } from "./groups";
 import { toast } from "../chrome";
 import { openSheet } from "./menu";
 import { openType } from "./type";
 
 type Entry = { kind: "heading"; label: string } | { kind: "ask"; turnId: string; botId: string; ask: FleetAsk }
-  | { kind: "working"; turnId: string; botId: string } | { kind: "gateway"; id: string; name: string; status: string };
+  | { kind: "working"; turnId: string; botId: string } | { kind: "gateway"; id: string; name: string; status: string }
+  | { kind: "finished"; item: FleetFinished };
 
 function askKey(turnId: string, requestId: string): string { return `${turnId}\u001f${requestId}`; }
 function entryKey(entry: Entry): string {
   if (entry.kind === "ask") return `ask:${askKey(entry.turnId, entry.ask.request_id)}`;
   if (entry.kind === "working") return `working:${entry.turnId}:${entry.botId}`;
   if (entry.kind === "gateway") return `gateway:${entry.id}`;
+  if (entry.kind === "finished") return entry.item.kind === "chat"
+    ? `finished:chat:${entry.item.bot}:${entry.item.session_id}:${entry.item.turn_id}`
+    : `finished:group:${entry.item.room_id}:${entry.item.ts}`;
   return `heading:${entry.label}`;
 }
 
@@ -39,7 +44,7 @@ export function createFleet(): Screen {
   const listEl = h("div", { class: "fleet-list" });
   el.append(header, summary, listEl);
 
-  let data: FleetData = { needs_you: [], working: [], gateways: [] };
+  let data: FleetData = { needs_you: [], working: [], gateways: [], finished: [] };
   let entries: Entry[] = [];
   let timer = 0;
   let active = false;
@@ -55,16 +60,19 @@ export function createFleet(): Screen {
     const needs = data.needs_you || [];
     const working = data.working || [];
     const gateways = data.gateways || [];
+    const finished = data.finished || [];
     entries = [
       { kind: "heading", label: `Needs You · ${needs.length}` },
       ...needs.map((item): Entry => ({ kind: "ask", turnId: item.turn_id, botId: item.bot_id, ask: item.ask })),
       { kind: "heading", label: `Working · ${working.length}` },
       ...working.map((item): Entry => ({ kind: "working", turnId: item.turn_id, botId: item.bot_id })),
+      { kind: "heading", label: `Finished · ${finished.length}` },
+      ...finished.map((item): Entry => ({ kind: "finished", item })),
       { kind: "heading", label: `Gateways · ${gateways.length}` },
       ...gateways.map((g): Entry => ({ kind: "gateway", id: g.id, name: g.name, status: g.status })),
     ];
     summary.textContent = lastError || (loading && !data.needs_you.length && !data.working.length && !data.gateways.length
-      ? "Loading Fleet…" : `Needs You ${needs.length} · Working ${working.length} · Gateways ${gateways.length}`);
+      ? "Loading Fleet…" : `Needs You ${needs.length} · Working ${working.length} · Finished ${finished.length} · Gateways ${gateways.length}`);
     list.setRows(entries.map((entry) => {
       if (entry.kind === "heading") return h("div", { class: "fleet-section", "aria-hidden": "true" }, entry.label);
       if (entry.kind === "ask") return h("div", { class: "fleet-row fleet-ask", "data-request-id": entry.ask.request_id },
@@ -75,6 +83,14 @@ export function createFleet(): Screen {
       if (entry.kind === "working") return h("div", { class: "fleet-row", "data-turn-id": entry.turnId, "aria-label": "Working turn" },
         h("div", { class: "fleet-row-main" }, h("div", { class: "fleet-row-title" }, botLabel(entry.botId)), h("div", { class: "fleet-row-sub" }, "Turn in progress")),
         h("span", { class: "fleet-status unknown" }, "Working"));
+      if (entry.kind === "finished") {
+        const item = entry.item;
+        const title = item.kind === "chat" ? botLabel(item.bot) : (item.name || item.room_id);
+        const sub = item.text || "No reply preview";
+        return h("div", { class: "fleet-row fleet-finished", "aria-label": `${title}, ${item.status}` },
+          h("div", { class: "fleet-row-main" }, h("div", { class: "fleet-row-title" }, `${title} · ${relativeTime(item.ts)}`), h("div", { class: "fleet-row-sub" }, sub)),
+          h("span", { class: `fleet-status ${item.status}` }, item.status));
+      }
       const cls = entry.status === "online" ? "online" : entry.status === "offline" ? "offline" : "unknown";
       return h("div", { class: "fleet-row fleet-gateway" }, h("div", { class: "fleet-row-main" },
         h("div", { class: "fleet-row-title" }, entry.name || entry.id), h("div", { class: "fleet-row-sub" }, entry.id)),
@@ -110,6 +126,15 @@ export function createFleet(): Screen {
   function activate(i: number): void {
     const entry = entries[i];
     if (!entry || entry.kind === "heading" || entry.kind === "gateway") return;
+    if (entry.kind === "finished") {
+      const item = entry.item;
+      if (item.kind === "chat") {
+        openChat(item.bot, item.session_id);
+      } else {
+        openGroupRoom(item.room_id, item.name);
+      }
+      return;
+    }
     if (entry.kind === "working") return;
     const key = askKey(entry.turnId, entry.ask.request_id);
     if (answered.has(key) || responding.has(key)) return;

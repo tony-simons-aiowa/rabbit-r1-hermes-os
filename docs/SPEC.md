@@ -130,7 +130,7 @@ Default `DeviceConfig`:
 | `POST /api/v1/pair` | none | `{"code":"ABCD2345","name":"Tony's R1"}` | `{"token":"…","device":{"id":"dev_…","name":"…"}}`; 400 `bad_code` |
 | `GET /api/v1/bootstrap` | device | | `{"server":{"version","mock"},"device":{"id","name"},"config":DeviceConfig,"config_rev":int,"bots":Bot[],"voice":{"stt":bool,"tts":bool}}` |
 | `GET /api/v1/bots` | device | | `{"bots":Bot[],"config_rev":int}` — `config_rev` lets the device notice Studio edits and re-bootstrap |
-| `GET /api/v1/fleet` | device | | `{"needs_you":[{"turn_id","bot_id","ask"}],"working":[{"turn_id","bot_id"}],"gateways":[{"id","name","status"}]}` — `ask` is a turn ask event without `seq`. Status is `online`, `offline`, or `unknown`. Activity is limited to turns started by the authenticated device through this bridge. |
+| `GET /api/v1/fleet` | device | | `{"needs_you":[{"turn_id","bot_id","ask"}],"working":[{"turn_id","bot_id"}],"finished":[…],"gateways":[{"id","name","status"}]}` — `ask` is a turn ask event without `seq`. Gateway status is `online`, `offline`, or `unknown`. Activity is limited to turns started by the authenticated device through this bridge. |
 | `GET /api/v1/bots/{bot}/sessions?limit=20` | device | | `{"sessions":Session[]}` newest first |
 | `GET /api/v1/bots/{bot}/sessions/{sid}/messages?limit=30` | device | | `{"messages":Message[]}` oldest→newest, last `limit` user/assistant messages; tool results folded into `tools` |
 | `POST /api/v1/bots/{bot}/turns` | device | `{"text":"…","session_id":"…"\|null,"speak":bool}` | `{"turn_id":"t_…","session_id":"…"}`; 409 `bot_locked`, 429 `busy` |
@@ -141,6 +141,8 @@ Default `DeviceConfig`:
 | `POST /api/v1/voice/speak` | device | `{"text":"…"}` (≤ 2000 chars) | `{"url":"<signed>","mime":"audio/mpeg"}`; 501 `tts_unavailable` |
 | `GET /api/v1/inbox?after=0&wait=0` | device | | `{"items":InboxItem[],"next":int}` |
 | `GET /api/v1/assets/{kind}/{name}?exp&sig` | signature | kinds: `avatar` (bot id; optional `&s=96` square size), `pet` (bot id), `audio` (file id) | bytes with correct `Content-Type`, `Cache-Control: private, max-age=3600` |
+
+Fleet `finished` entries contain `status` (`completed`, `failed`, or `cancelled`), a short reply preview in `text`, and a Unix timestamp in `ts`. Direct entries (`kind: "chat"`) include `bot`, `session_id`, and `turn_id`. Group entries (`kind: "group"`) include `room_id` and `name`, with one result per round. The bridge keeps a bounded history for each paired device across restarts.
 
 Approval choice ids: `once`, `session`, `always`, `deny` (the bridge passes the id upstream).
 
@@ -281,7 +283,7 @@ Screens:
 9. **Inbox** — notification cards.
 10. **Settings** — theme (cycles presets, local preview only), font size, Diagnostics (runs capability probes: native bridge, storage, mic, MediaRecorder mime types, audio playback, network round-trip ms, user agent — shows ✓/✗ lines), Unpair, About.
 11. **Offline / error banner** — non-blocking 16px banner at top when a request fails; retries with backoff.
-12. **Fleet Now** — open from the home roster. Needs You shows pending approvals and questions, Working shows active turns without pending questions, and Gateways shows connection status across the fleet. Selecting a question opens its controls and returns to Fleet Now after answering.
+12. **Fleet Now** — open from the home roster. Needs You shows pending approvals and questions, Working shows active turns without pending questions, Finished shows recent results from this device, and Gateways shows connection status across the fleet. Selecting a question opens its controls. Selecting a finished result opens the exact bot session or group room.
 
 Home can show one pinned bot and one pinned group before the gateway and roster rows. Pins stay visible when switching gateways. Clicking a pin opens its conversation. With voice enabled and the side button set to Talk, the highlighted pin shows the recording destination before the user holds the button.
 

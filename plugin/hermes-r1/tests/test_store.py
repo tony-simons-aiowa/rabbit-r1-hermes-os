@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from hermes_r1.bridge.store import Store, default_state_dir
+from hermes_r1.bridge.store import FINISHED_KEEP, Store, default_state_dir
 
 
 @pytest.fixture
@@ -56,6 +56,37 @@ def test_device_token_hashed_and_revocable(store):
     assert store.remove_device(device["id"]) is True
     assert store.device_for_token(token) is None
     assert store.remove_device(device["id"]) is False
+
+
+def test_finished_results_are_bounded_newest_first_and_removed_with_device(store):
+    code, _ = store.create_pair_code()
+    _, device = store.redeem_pair_code(code, "R1")
+    for i in range(FINISHED_KEEP + 3):
+        store.add_finished(device["id"], {"kind": "chat", "turn_id": str(i), "ts": i})
+    entries = store.finished(device["id"])
+    assert len(entries) == FINISHED_KEEP
+    assert entries[0]["turn_id"] == str(FINISHED_KEEP + 2)
+    assert entries[-1]["turn_id"] == "3"
+    assert store.remove_device(device["id"])
+    assert store.finished(device["id"]) == []
+
+
+def test_group_completion_write_failure_leaves_room_and_fleet_consistent(store, monkeypatch):
+    code, _ = store.create_pair_code()
+    _, device = store.redeem_pair_code(code, "R1")
+    device_id = device["id"]
+    room = {"id": "room", "rounds": [{"replies": [{"status": "pending"}]}]}
+    store.save_group(device_id, room)
+    completed = {"id": "room", "rounds": [{"replies": [{"status": "completed"}], "finished_ts": 1}]}
+
+    def disk_full():
+        raise OSError("Disk full")
+
+    monkeypatch.setattr(store, "_save", disk_full)
+    with pytest.raises(OSError):
+        store.finish_group_round(device_id, completed, {"kind": "group", "room_id": "room", "ts": 1})
+    assert store.group_rooms(device_id) == {"room": room}
+    assert store.finished(device_id) == []
 
 
 def test_preview_token_hidden_and_expires(store):

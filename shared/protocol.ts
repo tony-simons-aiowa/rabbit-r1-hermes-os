@@ -86,10 +86,16 @@ export type FleetAsk = {
   choices: AskChoice[];
 };
 
+export type FleetFinished =
+  | { kind: "chat"; bot: string; session_id: string; turn_id: string; status: "completed" | "failed" | "cancelled"; text: string; ts: number }
+  | { kind: "group"; room_id: string; name: string; status: "completed" | "failed" | "cancelled"; text: string; ts: number };
+
 export type FleetData = {
   needs_you: Array<{ turn_id: string; bot_id: string; ask: FleetAsk }>;
   working: Array<{ turn_id: string; bot_id: string }>;
   gateways: Array<{ id: string; name: string; status: "online" | "offline" | "unknown" }>;
+  /** Recent completed direct and group replies; absent on older bridges. */
+  finished?: FleetFinished[];
 };
 
 export type TurnEvent = { seq: number } & (

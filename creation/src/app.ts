@@ -26,10 +26,10 @@ export function openPair(message?: string): void {
   reset(createPair(message));
 }
 
-export function openChat(bot: string): void {
+export function openChat(bot: string, sessionId?: string | null): void {
   rememberBot(bot);
   state.currentBot = bot;
-  push(createChat(bot));
+  push(createChat(bot, sessionId));
 }
 
 /** Send text to a bot's chat. Opens that chat first when it is not on top. */

@@ -28,6 +28,7 @@ LAST_SEEN_INTERVAL = 60
 INBOX_KEEP = 100
 INBOX_READ_CHUNK = 1024 * 1024
 INBOX_LEVELS = ("info", "success", "warn")
+FINISHED_KEEP = 50
 
 
 def default_state_dir() -> Path:
@@ -69,6 +70,7 @@ class Store:
             "config_rev": 1,
             "devices": {},
             "groups": {},
+            "finished": {},
             "inbox": [],
             "inbox_next_id": 1,
             "inbox_offset": 0,
@@ -229,6 +231,7 @@ class Store:
             if self._data["devices"].pop(device_id, None) is None:
                 return False
             self._data["groups"].pop(device_id, None)
+            self._data["finished"].pop(device_id, None)
             self._save()
             return True
 
@@ -245,11 +248,64 @@ class Store:
             rooms[room["id"]] = copy.deepcopy(room)
             try:
                 self._save()
-            except OSError:
+            except Exception:
                 if previous is None:
                     rooms.pop(room["id"])
                 else:
                     rooms[room["id"]] = previous
+                raise
+
+    def finished(self, device_id: str) -> list[dict[str, Any]]:
+        """Return this device's bounded, newest-first finished-result list."""
+        with self._lock:
+            entries = self._data.get("finished", {}).get(device_id, [])
+            if not isinstance(entries, list):
+                return []
+            return copy.deepcopy(entries[:FINISHED_KEEP])
+
+    def add_finished(self, device_id: str, entry: dict[str, Any]) -> None:
+        """Add one device-owned result; persistence failure must not mutate state."""
+        with self._lock:
+            if device_id not in self._data["devices"]:
+                return
+            all_finished = self._data.setdefault("finished", {})
+            previous = all_finished.get(device_id, [])
+            if not isinstance(previous, list):
+                previous = []
+            updated = [copy.deepcopy(entry)] + previous
+            all_finished[device_id] = updated[:FINISHED_KEEP]
+            try:
+                self._save()
+            except Exception:
+                if previous:
+                    all_finished[device_id] = previous
+                else:
+                    all_finished.pop(device_id, None)
+                raise
+
+    def finish_group_round(self, device_id: str, room: dict[str, Any], entry: dict[str, Any]) -> None:
+        """Atomically persist round metadata and its Fleet result."""
+        with self._lock:
+            if device_id not in self._data["devices"]:
+                return
+            groups = self._data["groups"].setdefault(device_id, {})
+            old_room = groups.get(room["id"])
+            old_finished = self._data.setdefault("finished", {}).get(device_id, [])
+            groups[room["id"]] = copy.deepcopy(room)
+            all_finished = self._data["finished"]
+            entries = old_finished if isinstance(old_finished, list) else []
+            all_finished[device_id] = [copy.deepcopy(entry), *entries][:FINISHED_KEEP]
+            try:
+                self._save()
+            except Exception:
+                if old_room is None:
+                    groups.pop(room["id"], None)
+                else:
+                    groups[room["id"]] = old_room
+                if old_finished:
+                    all_finished[device_id] = old_finished
+                else:
+                    all_finished.pop(device_id, None)
                 raise
 
     # ---- inbox -------------------------------------------------------

@@ -342,7 +342,9 @@ async def fleet(request: web.Request) -> web.Response:
     gateways = await _gateway_status(request)
     turns: TurnManager = request.app[APP_TURNS]
     needs_you, working = turns.fleet_state(request[REQ_DEVICE]["id"])
-    return web.json_response({"needs_you": needs_you, "working": working, "gateways": gateways})
+    return web.json_response({"needs_you": needs_you, "working": working,
+                              "finished": turns.finished(request[REQ_DEVICE]["id"]),
+                              "gateways": gateways})
 
 
 async def list_sessions(request: web.Request) -> web.Response:

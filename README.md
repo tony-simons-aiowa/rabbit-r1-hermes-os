@@ -23,7 +23,7 @@ Studio (browser on your computer) ──▶ bridge
 
 - **Bot roster** — every local Hermes profile is a bot, with its Bot Mode avatar (shape + color, or uploaded photo), status dot, last reply and an "Active now" strip. Add gateways to chat with agents on other machines from the same R1.
 - **Home pins** — choose **Pin to Home** from a bot’s chat menu or **Group options**. Keep one bot and one group at the top of Home, even when you switch gateways. Click a pin to open its conversation, or highlight it and hold the side button to talk when voice is enabled and the button is set to Talk.
-- **Fleet Now** — see gateway health and the active turns from this device across gateways. Open a pending approval or question and answer it from the same screen.
+- **Fleet Now** — see gateway health and the active turns from this device across gateways. Answer pending approvals and questions, or open a recent reply from **Finished** to return to its chat or group room.
 - **Group Chats** — create a named room with two to four bots from any connected gateway. With voice enabled and the default button mapping, hold the side button to talk and release to send one transcript to the group. Each message starts one round of replies. Recent group history goes to every member, and approvals appear in Fleet Now. The bridge saves the latest 30 rounds for the paired device.
 - **Memory Graph** — open Settings to explore the links between learned skills and stored memories for a profile on the bridge host. Use the wheel to focus a node. Memory entries use numbered labels.
 - **Animated avatars** — the geometric faces from Hermes Desktop: they blink when idle and think while a turn runs. Pets (petdex sprites you have installed) sit beside the highlighted bot.

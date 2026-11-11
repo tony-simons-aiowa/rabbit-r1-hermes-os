@@ -49,7 +49,7 @@ type Live = {
   chips: Map<string, HTMLElement>;
 };
 
-export function createChat(botId: string): Screen {
+export function createChat(botId: string, initialSessionId?: string | null): Screen {
   const el = h("div", { class: "scr chat" });
   const fallback: Bot["avatar"] = { kind: "shape", shape: "circle", color: "", url: "" };
   const avatarOf = (): Bot["avatar"] => {
@@ -64,7 +64,7 @@ export function createChat(botId: string): Screen {
   const foot = h("div", { class: "chat-foot" }, "hold to talk · click for menu");
   el.append(head, tx, foot);
 
-  let sid: string | null = state.prefs.sessions[botId] || null;
+  let sid: string | null = initialSessionId === undefined ? (state.prefs.sessions[botId] || null) : initialSessionId;
   let sessionTitle = "";
   let turnId: string | null = null;
   let live: Live | null = null;
@@ -163,7 +163,6 @@ export function createChat(botId: string): Screen {
       }
       const mres = await guard(state.api.messages(botId, sid, HISTORY_LIMIT));
       if (seq !== loadSeq) return;
-      if (isBusy()) return; // a live turn owns the transcript
       clear(tx);
       msgNodes.length = 0;
       lastAssistant = "";
@@ -323,6 +322,8 @@ export function createChat(botId: string): Screen {
       return;
     }
     if (!state.api) return;
+    // This screen's turn takes over its transcript from any pending history load.
+    ++loadSeq;
     clearEmpty();
     userUp = false;
     addUser(t);

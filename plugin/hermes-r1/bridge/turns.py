@@ -37,6 +37,7 @@ class Turn:
     session_id: str
     device_id: str
     speak: bool
+    record_finished: bool = True
     audio_base_path: str = ""
     events: list[Json] = field(default_factory=list)
     done: bool = False
@@ -99,6 +100,7 @@ class TurnManager:
         text: str,
         speak: bool,
         audio_base_path: str = "",
+        record_finished: bool = True,
     ) -> Turn:
         self._prune()
         key = (device_id, bot_id)
@@ -115,6 +117,7 @@ class TurnManager:
             session_id=handle.session_id,
             device_id=device_id,
             speak=speak,
+            record_finished=record_finished,
             audio_base_path=audio_base_path.rstrip("/"),
             handle=handle,
         )
@@ -263,6 +266,17 @@ class TurnManager:
         one_line = " ".join(re.sub(r"```.*?```|[#*_`>]+", " ", text, flags=re.S).split())
         if status == "completed" and one_line:
             self._last[turn.bot_id] = {"text": one_line[:80], "ts": now}
+        if not turn.record_finished:
+            return
+        entry = {
+            "kind": "chat", "bot": turn.bot_id, "session_id": turn.session_id,
+            "turn_id": turn.id, "status": status, "text": one_line[:240], "ts": now,
+        }
+        try:
+            self.store.add_finished(turn.device_id, entry)
+        except Exception:
+            # Fleet persistence is ancillary; it must never interrupt a turn.
+            log.warning("could not persist finished turn %s", turn.id, exc_info=True)
 
     async def _speech_event(self, text: str, base_path: str = "") -> Json | None:
         """Synthesize ``text``; returns a ``speech`` event or None. Never raises."""
@@ -350,6 +364,10 @@ class TurnManager:
             else:
                 working.append({"turn_id": turn.id, "bot_id": turn.bot_id})
         return needs_you, working
+
+    def finished(self, device_id: str) -> list[Json]:
+        """Finished results belong to a paired device, even for shared bots."""
+        return self.store.finished(device_id)
 
     # ---- overlay -------------------------------------------------------
 
