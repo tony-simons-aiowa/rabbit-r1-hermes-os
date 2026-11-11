@@ -90,6 +90,15 @@ export type FleetFinished =
   | { kind: "chat"; bot: string; session_id: string; turn_id: string; status: "completed" | "failed" | "cancelled"; text: string; ts: number }
   | { kind: "group"; room_id: string; name: string; status: "completed" | "failed" | "cancelled"; text: string; ts: number };
 
+export type Routine = {
+  id: string;
+  label: string;
+  text: string;
+  target: { kind: "bot" | "group"; id: string };
+};
+
+export type AdminRoutines = { routines: Routine[]; groups: Array<{ id: string; name: string }> };
+
 export type FleetData = {
   needs_you: Array<{ turn_id: string; bot_id: string; ask: FleetAsk }>;
   working: Array<{ turn_id: string; bot_id: string }>;

@@ -9,6 +9,7 @@ import { mountAppearance } from "./tabs/appearance";
 import { mountBots } from "./tabs/bots";
 import { mountDevices } from "./tabs/devices";
 import { mountPrompts } from "./tabs/prompts";
+import { mountRoutines } from "./tabs/routines";
 import { mountSetup } from "./tabs/setup";
 import { mountVoice } from "./tabs/voice";
 
@@ -21,6 +22,7 @@ const TABS: { id: string; label: string; mount: () => Tab }[] = [
   { id: "appearance", label: "Appearance", mount: mountAppearance },
   { id: "bots", label: "Bots", mount: mountBots },
   { id: "prompts", label: "Quick prompts", mount: mountPrompts },
+  { id: "routines", label: "Routines", mount: mountRoutines },
   { id: "voice", label: "Voice & buttons", mount: mountVoice },
 ];
 

@@ -6,14 +6,14 @@ import { renderAvatar, setAvatarState, renderPet, petMoodFor } from "../../../sh
 import type { Bot } from "../../../shared/protocol";
 import { state, subscribe, orderedBots, rememberBot, availableGateways, selectedGateway, rememberGateway, gatewayId, unpinBot } from "../state";
 import { refreshChrome, toast } from "../chrome";
-import { openChat, openInbox, openFleet, openGroups, openSettings, talk, flags } from "../app";
+import { openChat, openInbox, openFleet, openGroups, openRoutines, openSettings, talk, flags } from "../app";
 import { canTalk, openListening } from "./listening";
 import { openGroupRoom } from "./groups";
 import { openSheet } from "./menu";
 
 const PET_HEIGHT = 30;
 
-type Item = { kind: "bot"; bot: Bot } | { kind: "pinnedBot"; bot: Bot } | { kind: "pinnedGroup"; id: string; name: string } | { kind: "gateway" } | { kind: "fleet" } | { kind: "groups" } | { kind: "inbox" } | { kind: "settings" };
+type Item = { kind: "bot"; bot: Bot } | { kind: "pinnedBot"; bot: Bot } | { kind: "pinnedGroup"; id: string; name: string } | { kind: "gateway" } | { kind: "fleet" } | { kind: "groups" } | { kind: "routines" } | { kind: "inbox" } | { kind: "settings" };
 
 export function createHome(): Screen {
   const el = h("div", { class: "scr home" });
@@ -74,6 +74,7 @@ export function createHome(): Screen {
     }
     if (it.kind === "fleet") return openFleet();
     if (it.kind === "groups") return openGroups();
+    if (it.kind === "routines") return openRoutines();
     if (it.kind === "pinnedGroup") { openGroupRoom(it.id, it.name); return; }
     if (it.kind === "inbox") return openInbox();
     if (it.kind === "settings") return openSettings();
@@ -122,7 +123,7 @@ export function createHome(): Screen {
     greet.style.display = state.config.home.greeting ? "" : "none";
 
     items = bots.map((b): Item => ({ kind: "bot", bot: b }));
-    items.unshift({ kind: "fleet" }, { kind: "groups" });
+    items.unshift({ kind: "fleet" }, { kind: "groups" }, { kind: "routines" });
     if (gateways.length > 1) items.unshift({ kind: "gateway" });
     if (pinnedBot || pinnedGroup) {
       items.unshift(...[
@@ -165,6 +166,11 @@ export function createHome(): Screen {
         avatars.push(null);
         return h("div", { class: "row hrow special" }, h("div", { class: "row-main" },
           h("div", { class: "row-t" }, "Group Chats"), h("div", { class: "row-s" }, "Talk with multiple bots")));
+      }
+      if (it.kind === "routines") {
+        avatars.push(null);
+        return h("div", { class: "row hrow special" }, h("div", { class: "row-main" },
+          h("div", { class: "row-t" }, "Routines"), h("div", { class: "row-s" }, "Run a saved prompt")));
       }
       if (it.kind === "inbox") {
         avatars.push(null);

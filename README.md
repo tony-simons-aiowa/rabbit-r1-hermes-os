@@ -31,6 +31,7 @@ Studio (browser on your computer) ──▶ bridge
 - **Approvals and questions** — when Hermes needs a decision it appears as a sheet you answer with the wheel.
 - **Voice** — hold the side button to talk (uses Hermes' speech-to-text), optional read-aloud (Hermes' text-to-speech).
 - **Sessions, quick prompts, inbox** — resume chats, one-click prompts, notification cards your agents send with `r1_notify`.
+- **Routines** — in Studio, choose a paired device and save a prompt for a specific bot or one of that device’s group rooms. On the R1, open **Routines** from Home and click the saved prompt to send it and open the conversation.
 - **13 themes** — the Hermes Desktop presets plus `rabbit`, each token overridable.
 - **Hardware-first input** — wheel = move/scroll, click = select, double-click = back, hold = talk. Touch works too.
 
@@ -130,7 +131,7 @@ Also not yet exercised for real: clarification prompts and approvals against a l
 - The R1 can only open chats it started. Hermes does not let API clients attach to sessions owned by Desktop, the CLI or the TUI.
 - Hermes Desktop's newer "blobatar" faces are drawn as the nearest of the seven classic shapes.
 - It is an app you launch, not a replacement for the R1 home screen.
-- No routines editor or camera attachments yet.
+- No camera attachments yet.
 
 ## Development
 

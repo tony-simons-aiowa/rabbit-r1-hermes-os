@@ -455,6 +455,117 @@ async def test_delete_device_revokes_token(client, store):
     assert (await client.delete(f"/api/v1/admin/devices/{device_id}", headers=admin(store))).status == 404
 
 
+async def test_device_routines_are_private_persistent_and_cleaned_up(client, store, tmp_path):
+    owner = await pair_device(client, store, "owner")
+    other = await pair_device(client, store, "other")
+    device_id = store.device_for_token(owner["Authorization"].split()[1])["id"]
+    create = await client.post("/api/v1/groups", headers=owner,
+                               json={"name": "My room", "bots": ["default", "coder"]})
+    group_id = (await create.json())["id"]
+    path = f"/api/v1/admin/devices/{device_id}/routines"
+    payload = {"routines": [
+        {"id": "morning", "label": "Morning", "text": "Summarize my day", "target": {"kind": "bot", "id": "default"}},
+        {"id": "panel", "label": "Ask the panel", "text": "Review this", "target": {"kind": "group", "id": group_id}},
+    ]}
+    saved = await client.put(path, headers=admin(store), json=payload)
+    assert saved.status == 200
+    response = await saved.json()
+    assert response == {"routines": payload["routines"], "groups": [{"id": group_id, "name": "My room"}]}
+    assert (await (await client.get("/api/v1/routines", headers=owner)).json())["routines"] == payload["routines"]
+    assert (await (await client.get("/api/v1/routines", headers=other)).json())["routines"] == []
+    assert (await client.get("/api/v1/admin/devices/nope/routines", headers=admin(store))).status == 404
+    assert (await client.get(path)).status == 401
+
+    reopened = Store(store.state_dir)
+    assert reopened.device_routines(device_id) == payload["routines"]
+    assert reopened.remove_device(device_id)
+    assert reopened.device_routines(device_id) == []
+
+
+@pytest.mark.parametrize("routine", [
+    {"id": "same", "label": "One", "text": "x", "target": {"kind": "bot", "id": "default"}},
+    {"id": "same", "label": "Two", "text": "y", "target": {"kind": "bot", "id": "coder"}},
+])
+async def test_device_routines_reject_duplicate_ids(client, store, routine):
+    owner = await pair_device(client, store)
+    device_id = store.device_for_token(owner["Authorization"].split()[1])["id"]
+    response = await client.put(f"/api/v1/admin/devices/{device_id}/routines", headers=admin(store),
+                                json={"routines": [routine, {**routine, "target": {"kind": "bot", "id": "coder"}}]})
+    assert response.status == 400
+
+
+async def test_device_routines_reject_unknown_and_foreign_targets(client, store):
+    owner = await pair_device(client, store)
+    other = await pair_device(client, store)
+    device_id = store.device_for_token(owner["Authorization"].split()[1])["id"]
+    other_room = await client.post("/api/v1/groups", headers=other,
+                                   json={"name": "Other", "bots": ["default", "coder"]})
+    foreign_id = (await other_room.json())["id"]
+    path = f"/api/v1/admin/devices/{device_id}/routines"
+    for target in ({"kind": "bot", "id": "missing"}, {"kind": "group", "id": foreign_id},
+                   {"kind": "other", "id": "default"}):
+        response = await client.put(path, headers=admin(store), json={"routines": [
+            {"id": "bad", "label": "Bad", "text": "x", "target": target},
+        ]})
+        assert response.status == 400
+
+
+async def test_admin_routines_reject_expired_or_preview_devices(client, store):
+    owner = await pair_device(client, store)
+    device_id = store.device_for_token(owner["Authorization"].split()[1])["id"]
+    store._data["devices"][device_id]["expires"] = time.time() - 1
+    assert (await client.get(f"/api/v1/admin/devices/{device_id}/routines", headers=admin(store))).status == 404
+    preview = await client.post("/api/v1/admin/preview-token", headers=admin(store))
+    preview_id = store.device_for_token((await preview.json())["token"])["id"]
+    assert (await client.get(f"/api/v1/admin/devices/{preview_id}/routines", headers=admin(store))).status == 404
+
+
+async def test_routine_text_limits_match_group_and_direct_send_limits(client, store):
+    owner = await pair_device(client, store)
+    device_id = store.device_for_token(owner["Authorization"].split()[1])["id"]
+    created = await client.post("/api/v1/groups", headers=owner,
+                                json={"name": "Panel", "bots": ["default", "coder"]})
+    room_id = (await created.json())["id"]
+    too_long = "x" * 2001
+    group_send = await client.post(f"/api/v1/groups/{room_id}/messages", headers=owner,
+                                  json={"text": too_long})
+    assert group_send.status == 400
+    group_routine = {"id": "group", "label": "Group", "text": too_long,
+                     "target": {"kind": "group", "id": room_id}}
+    path = f"/api/v1/admin/devices/{device_id}/routines"
+    assert (await client.put(path, headers=admin(store), json={"routines": [group_routine]})).status == 400
+    direct_routine = {**group_routine, "id": "direct", "label": "Direct",
+                      "target": {"kind": "bot", "id": "default"}}
+    saved = await client.put(path, headers=admin(store), json={"routines": [direct_routine]})
+    assert saved.status == 200
+    direct = await client.post("/api/v1/bots/default/turns", headers=owner, json={"text": too_long})
+    assert direct.status == 200
+    turn_id = (await direct.json())["turn_id"]
+    await client.post(f"/api/v1/turns/{turn_id}/stop", headers=owner)
+
+
+async def test_routine_save_race_with_device_removal_returns_404(aiohttp_client, store, static_dir):
+    class RemovingHost(MockHost):
+        device_id = None
+        remove_on_list = False
+
+        async def list_bots(self):
+            bots = await super().list_bots()
+            if self.remove_on_list:
+                self.remove_on_list = False
+                store.remove_device(self.device_id)
+            return bots
+
+    host = RemovingHost(speed=0)
+    client = await aiohttp_client(create_app(host, store, static_dir=static_dir))
+    owner = await pair_device(client, store)
+    host.device_id = store.device_for_token(owner["Authorization"].split()[1])["id"]
+    host.remove_on_list = True
+    response = await client.put(f"/api/v1/admin/devices/{host.device_id}/routines", headers=admin(store),
+                                json={"routines": []})
+    assert response.status == 404
+
+
 async def test_admin_inbox_requires_title(client, store):
     resp = await client.post("/api/v1/admin/inbox", headers=admin(store), json={"body": "x"})
     assert resp.status == 400

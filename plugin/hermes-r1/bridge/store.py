@@ -70,6 +70,7 @@ class Store:
             "config_rev": 1,
             "devices": {},
             "groups": {},
+            "routines": {},
             "finished": {},
             "inbox": [],
             "inbox_next_id": 1,
@@ -231,6 +232,7 @@ class Store:
             if self._data["devices"].pop(device_id, None) is None:
                 return False
             self._data["groups"].pop(device_id, None)
+            self._data["routines"].pop(device_id, None)
             self._data["finished"].pop(device_id, None)
             self._save()
             return True
@@ -238,6 +240,38 @@ class Store:
     def group_rooms(self, device_id: str) -> dict[str, Any]:
         with self._lock:
             return copy.deepcopy(self._data["groups"].get(device_id, {}))
+
+    def paired_device(self, device_id: str) -> dict[str, Any] | None:
+        """Return a live, user-paired device, excluding hidden preview identities."""
+        with self._lock:
+            device = self._data["devices"].get(device_id)
+            if not device or device.get("hidden"):
+                return None
+            expires = float(device.get("expires") or 0)
+            if expires and time.time() > expires:
+                return None
+            return _public_device(device)
+
+    def device_routines(self, device_id: str) -> list[dict[str, Any]]:
+        with self._lock:
+            routines = self._data.get("routines", {}).get(device_id, [])
+            return copy.deepcopy(routines) if isinstance(routines, list) else []
+
+    def set_device_routines(self, device_id: str, routines: list[dict[str, Any]]) -> None:
+        with self._lock:
+            if device_id not in self._data["devices"]:
+                raise KeyError(device_id)
+            all_routines = self._data.setdefault("routines", {})
+            previous = all_routines.get(device_id)
+            all_routines[device_id] = copy.deepcopy(routines)
+            try:
+                self._save()
+            except Exception:
+                if previous is None:
+                    all_routines.pop(device_id, None)
+                else:
+                    all_routines[device_id] = previous
+                raise
 
     def save_group(self, device_id: str, room: dict[str, Any]) -> None:
         with self._lock:
