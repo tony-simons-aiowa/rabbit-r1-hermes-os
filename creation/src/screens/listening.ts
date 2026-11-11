@@ -1,4 +1,4 @@
-// Listening overlay: big avatar, Listening… → Transcribing… → sends the text to the bot's chat.
+// Listening overlay shared by direct and group chats.
 import { ApiError } from "../../../shared/api";
 import { h } from "../ui";
 import { push, pop, current, type Screen } from "../nav";
@@ -7,7 +7,7 @@ import { state, botById } from "../state";
 import { toast } from "../chrome";
 import { renderAvatar, setAvatarLevel } from "../../../shared/avatar";
 import { pickVoiceMode, startRecording, type Recording } from "../voice";
-import { guard, sendTo } from "../app";
+import { guard } from "../app";
 
 const MIN_HOLD_MS = 300;
 
@@ -16,27 +16,35 @@ export function canTalk(): boolean {
   return pickVoiceMode(state.config.voice.input, state.voice.stt) !== null;
 }
 
-export function openListening(bot: string, mode: "hold" | "tap"): void {
+export function openListening(opts: {
+  mode: "hold" | "tap";
+  bot?: string;
+  group?: string;
+  onTranscript: (text: string) => void;
+}): void {
   const vm = pickVoiceMode(state.config.voice.input, state.voice.stt);
   if (!vm) {
     toast("Voice not available — use Type");
     return;
   }
-  const b = botById(bot);
+  const { bot, group, mode, onTranscript } = opts;
+  const b = bot ? botById(bot) : undefined;
   const el = h("div", { class: "scr listen" });
   const avatar = renderAvatar(
     b ? b.avatar : { kind: "shape", shape: "circle", color: "", url: "" },
-    { botId: bot, size: 96, listening: true, animate: true },
+    { botId: bot ?? "group", size: 96, listening: true, animate: true },
   );
   const label = h("div", { class: "listen-label" }, "Listening…");
   const hint = h("div", { class: "listen-hint" }, mode === "hold" ? "release to send" : "click to send");
-  el.append(h("div", { class: "listen-av" }, avatar), label, hint);
+  el.append(h("div", { class: "listen-av" }, avatar), label);
+  if (group) el.append(h("div", { class: "listen-hint" }, group));
+  el.append(hint);
 
   const startedAt = Date.now();
   let rec: Recording | null = null;
   let phase: "rec" | "busy" | "done" = "rec";
-  let released = false;
-  let closedEarly = false;
+  let releasedAt: number | undefined;
+  let cancelled = false;
 
   const close = (): void => {
     phase = "done";
@@ -45,11 +53,11 @@ export function openListening(bot: string, mode: "hold" | "tap"): void {
 
   const finish = (): void => {
     if (phase !== "rec") return;
+    releasedAt ??= Date.now();
     if (!rec) {
-      released = true;
       return;
     }
-    const held = Date.now() - startedAt;
+    const held = releasedAt - startedAt;
     if (mode === "hold" && held < MIN_HOLD_MS) {
       rec.cancel();
       rec = null;
@@ -60,17 +68,21 @@ export function openListening(bot: string, mode: "hold" | "tap"): void {
     label.textContent = "Transcribing…";
     hint.textContent = "";
     const r = rec;
+    const api = state.api;
     r.stop()
       .then(async (res) => {
+        if (cancelled) return;
         let text = "";
         if (typeof res === "string") text = res;
-        else if (res) text = (await guard(state.api!.transcribe(res))).text;
+        else if (res && api) text = (await guard(api.transcribe(res))).text;
+        if (cancelled) return;
         const t = (text || "").trim();
         close();
-        if (t) sendTo(bot, t);
+        if (t) onTranscript(t);
         else toast("Didn't catch that");
       })
       .catch((e) => {
+        if (cancelled) return;
         close();
         if (e instanceof ApiError && e.code === "stt_unavailable") toast("Transcription unavailable — use Type");
         else toast("Voice failed — use Type");
@@ -95,11 +107,10 @@ export function openListening(bot: string, mode: "hold" | "tap"): void {
       return false; // back: nav pops and destroy() cancels the recording
     },
     destroy() {
-      if (phase === "rec") {
-        closedEarly = true;
-        if (rec) rec.cancel();
-        phase = "done";
-      }
+      if (phase === "done") return;
+      cancelled = true;
+      if (phase === "rec") rec?.cancel();
+      phase = "done";
     },
   };
 
@@ -107,15 +118,16 @@ export function openListening(bot: string, mode: "hold" | "tap"): void {
 
   startRecording(vm)
     .then((r) => {
-      if (closedEarly || phase !== "rec") {
+      if (phase !== "rec") {
         r.cancel();
         return;
       }
       rec = r;
       r.onLevel((l) => setAvatarLevel(avatar, l));
-      if (released) finish();
+      if (releasedAt !== undefined) finish();
     })
     .catch(() => {
+      if (cancelled) return;
       toast("Microphone blocked");
       close();
     });

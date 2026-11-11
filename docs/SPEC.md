@@ -302,4 +302,4 @@ The bridge can drive an agent that controls the user's computer, and it is expos
 
 ## 9. Not in v0.1
 
-Faithful Blobatar rendering (mapped to the 7 shapes for now), group chats, routines editor, image attachments from the R1 camera, per-device configs, WebSocket transport.
+Faithful Blobatar rendering (mapped to the 7 shapes for now), routines editor, image attachments from the R1 camera, per-device configs, WebSocket transport.
