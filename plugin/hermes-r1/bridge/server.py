@@ -307,8 +307,8 @@ async def list_bots(request: web.Request) -> web.Response:
     return web.json_response({"bots": await _bots_view(request), "config_rev": store.config_rev})
 
 
-async def fleet(request: web.Request) -> web.Response:
-    """Compact device-owned Fleet Now projection plus safe gateway reachability."""
+async def _gateway_status(request: web.Request) -> list[Json]:
+    """Share the cached probe of configured gateways between Fleet Now and Studio."""
     host: Any = request.app[APP_HOST]
     now = time.monotonic()
     cache = request.app[APP_FLEET_CACHE]
@@ -334,6 +334,12 @@ async def fleet(request: web.Request) -> web.Response:
             else:
                 gateways = [{"id": "local", "name": "Local", "status": "unknown"}]
                 cache.update(at=time.monotonic(), gateways=gateways)
+    return gateways
+
+
+async def fleet(request: web.Request) -> web.Response:
+    """Compact device-owned Fleet Now projection plus safe gateway reachability."""
+    gateways = await _gateway_status(request)
     turns: TurnManager = request.app[APP_TURNS]
     needs_you, working = turns.fleet_state(request[REQ_DEVICE]["id"])
     return web.json_response({"needs_you": needs_you, "working": working, "gateways": gateways})
@@ -608,6 +614,10 @@ async def admin_state(request: web.Request) -> web.Response:
     })
 
 
+async def admin_setup_status(request: web.Request) -> web.Response:
+    return web.json_response({"gateways": await _gateway_status(request)})
+
+
 async def admin_put_config(request: web.Request) -> web.Response:
     store: Store = request.app[APP_STORE]
     body = await _json_body(request, error_code="bad_config")
@@ -757,6 +767,7 @@ def _add_routes(app: web.Application) -> None:
     r.add_get("/api/v1/inbox", inbox)
     r.add_get("/api/v1/assets/{kind}/{name}", asset)
     r.add_get("/api/v1/admin/state", admin_state)
+    r.add_get("/api/v1/admin/setup-status", admin_setup_status)
     r.add_put("/api/v1/admin/config", admin_put_config)
     r.add_post("/api/v1/admin/pair", admin_pair)
     r.add_delete("/api/v1/admin/devices/{id}", admin_delete_device)

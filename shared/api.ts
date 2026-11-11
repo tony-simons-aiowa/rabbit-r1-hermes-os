@@ -152,6 +152,9 @@ export class Api {
   adminState() {
     return this.request<AdminState>("GET", "/admin/state");
   }
+  adminSetupStatus() {
+    return this.request<{ gateways: FleetData["gateways"] }>("GET", "/admin/setup-status");
+  }
   adminSaveConfig(config: DeviceConfig) {
     return this.request<{ config: DeviceConfig; config_rev: number }>("PUT", "/admin/config", config);
   }

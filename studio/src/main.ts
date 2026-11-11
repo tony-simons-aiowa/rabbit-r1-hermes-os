@@ -9,12 +9,14 @@ import { mountAppearance } from "./tabs/appearance";
 import { mountBots } from "./tabs/bots";
 import { mountDevices } from "./tabs/devices";
 import { mountPrompts } from "./tabs/prompts";
+import { mountSetup } from "./tabs/setup";
 import { mountVoice } from "./tabs/voice";
 
 const TOKEN_KEY = "hermes-r1-studio-admin";
 const REFRESH_MS = 10000;
 
 const TABS: { id: string; label: string; mount: () => Tab }[] = [
+  { id: "setup", label: "Setup", mount: mountSetup },
   { id: "devices", label: "Devices", mount: mountDevices },
   { id: "appearance", label: "Appearance", mount: mountAppearance },
   { id: "bots", label: "Bots", mount: mountBots },
