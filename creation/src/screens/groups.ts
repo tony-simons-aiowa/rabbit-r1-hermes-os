@@ -5,6 +5,8 @@ import { current, pop, push, type Screen } from "../nav";
 import { state } from "../state";
 import { h, List } from "../ui";
 import { row, screenEl } from "./base";
+import { canTalk, openListening } from "./listening";
+import { openSheet } from "./menu";
 import { openType } from "./type";
 
 function header(title: string): HTMLElement {
@@ -128,7 +130,8 @@ function showRoom(id: string, name: string): void {
     }
     status.textContent = pending() ? "Bots are replying · Approvals in Fleet Now" :
       next.members.map((member) => member.name).join(", ");
-    action.textContent = pending() ? "Open Fleet Now" : "Type message";
+    action.textContent = pending() ? "Open Fleet Now" :
+      canTalk() && state.config.buttons.long_press === "talk" ? "Type message · Hold to talk" : "Type message";
   }
   function entry(author: string, text: string): HTMLElement {
     return h("div", { class: "group-message" }, h("strong", null, author), h("div", null, text));
@@ -156,19 +159,33 @@ function showRoom(id: string, name: string): void {
     openType({ title: name, quick: [{
       label: "Test group chat",
       text: "Say hello to the group in one short sentence and include your bot name. Reply in text only. Do not use tools or change anything.",
-    }], onSend: (text) => {
-      const api = state.api;
-      if (!api || sending) return;
-      sending = true;
-      clearTimeout(timer);
-      status.textContent = "Sending…";
-      void guard(api.sendGroup(id, text)).then((next) => {
-        if (visible) render(next);
-      }).catch((error) => toast(message(error))).finally(() => {
-        sending = false;
-        void refresh();
-      });
-    } });
+    }], onSend: send });
+  }
+  function send(text: string): void {
+    const api = state.api;
+    if (!visible || !api || sending || pending()) return;
+    sending = true;
+    clearTimeout(timer);
+    status.textContent = "Sending…";
+    void guard(api.sendGroup(id, text)).then((next) => {
+      if (visible) render(next);
+    }).catch((error) => toast(message(error))).finally(() => {
+      sending = false;
+      void refresh();
+    });
+  }
+  function talk(mode: "hold" | "tap"): void {
+    if (sending || !room) return;
+    if (pending()) return toast("Wait for this round to finish");
+    openListening({ group: name, mode, onTranscript: send });
+  }
+  function menu(): void {
+    if (pending()) return openFleet();
+    if (!room || sending) return;
+    openSheet({ title: name, rows: [
+      ...(canTalk() ? [{ label: "Talk to group", onPick: () => talk("tap") }] : []),
+      { label: "Type message", onPick: act },
+    ] });
   }
   push({
     el,
@@ -177,6 +194,11 @@ function showRoom(id: string, name: string): void {
     onInput(ev) {
       if (ev === "up" || ev === "down") transcript.scrollTop += ev === "up" ? -38 : 38;
       else if (ev === "click") act();
+      else if (ev === "holdStart") {
+        if (state.config.buttons.long_press === "talk") talk("hold");
+        else menu();
+      }
+      else if (ev === "menu") menu();
       else return false;
       return true;
     },

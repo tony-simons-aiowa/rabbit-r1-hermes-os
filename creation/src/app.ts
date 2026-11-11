@@ -67,7 +67,7 @@ export function openDiagnostics(): void {
 }
 
 export function talk(bot: string, mode: "hold" | "tap"): void {
-  openListening(bot, mode);
+  openListening({ bot, mode, onTranscript: (text) => sendTo(bot, text) });
 }
 
 export async function unpair(): Promise<void> {
