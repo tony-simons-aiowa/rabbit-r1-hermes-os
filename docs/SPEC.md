@@ -283,7 +283,9 @@ Screens:
 11. **Offline / error banner** — non-blocking 16px banner at top when a request fails; retries with backoff.
 12. **Fleet Now** — open from the home roster. Needs You shows pending approvals and questions, Working shows active turns without pending questions, and Gateways shows connection status across the fleet. Selecting a question opens its controls and returns to Fleet Now after answering.
 
-Persistence on device: token in `creationStorage.secure` (fallback `localStorage`); last bot + last session per bot in `creationStorage.plain` (fallback `localStorage`).
+Home can show one pinned bot and one pinned group before the gateway and roster rows. Pins stay visible when switching gateways. Clicking a pin opens its conversation. With voice enabled and the side button set to Talk, the highlighted pin shows the recording destination before the user holds the button.
+
+Persistence on device: token in `creationStorage.secure` (fallback `localStorage`); last bot, last session per bot, and Home pins in `creationStorage.plain` (fallback `localStorage`).
 
 Voice input strategy (`config.voice.input`): `auto` = MediaRecorder if `getUserMedia` works, else native `CreationVoiceHandler` if present, else voice is hidden. Recording: mono, prefer `audio/webm;codecs=opus`, fall back to whatever `MediaRecorder.isTypeSupported` accepts; upload to `/voice/transcribe`.
 

@@ -2,7 +2,7 @@ import type { GroupChat } from "../../../shared/protocol";
 import { guard, openFleet } from "../app";
 import { toast } from "../chrome";
 import { current, pop, push, type Screen } from "../nav";
-import { state } from "../state";
+import { state, pinGroup, unpinGroup } from "../state";
 import { h, List } from "../ui";
 import { row, screenEl } from "./base";
 import { canTalk, openListening } from "./listening";
@@ -97,17 +97,22 @@ function openPicker(): void {
   push(screen);
 }
 
-function showRoom(id: string, name: string): void {
+export function openGroupRoom(id: string, name: string): (text: string) => void {
+  return showRoom(id, name);
+}
+
+function showRoom(id: string, name: string): (text: string) => void {
   const el = screenEl("groups");
   const status = h("div", { class: "fleet-summary", role: "status" }, "Loading…");
   const transcript = h("div", { class: "group-transcript" });
-  const action = h("button", { class: "group-action", type: "button", onclick: act }, "Type message");
+  const action = h("button", { class: "group-action", type: "button", onclick: act }, "Group options");
   el.append(header(name), status, transcript, action);
   let room: GroupChat | undefined;
   let timer: ReturnType<typeof setTimeout>;
   let visible = false;
   let reading = false;
   let sending = false;
+  let sendRevision = 0;
 
   function pending(): boolean {
     return room?.rounds[room.rounds.length - 1]?.replies.some((reply) => reply.status === "pending") ?? false;
@@ -131,7 +136,7 @@ function showRoom(id: string, name: string): void {
     status.textContent = pending() ? "Bots are replying · Approvals in Fleet Now" :
       next.members.map((member) => member.name).join(", ");
     action.textContent = pending() ? "Open Fleet Now" :
-      canTalk() && state.config.buttons.long_press === "talk" ? "Type message · Hold to talk" : "Type message";
+      canTalk() && state.config.buttons.long_press === "talk" ? "Group options · Hold to talk" : "Group options";
   }
   function entry(author: string, text: string): HTMLElement {
     return h("div", { class: "group-message" }, h("strong", null, author), h("div", null, text));
@@ -141,20 +146,27 @@ function showRoom(id: string, name: string): void {
     if (!visible || reading || sending || !api) return;
     clearTimeout(timer);
     reading = true;
+    const revision = sendRevision;
     let retry = false;
     try {
       const next = await guard(api.group(id));
-      if (visible && !sending) render(next);
+      if (visible && !sending && revision === sendRevision) render(next);
     } catch (error) {
-      if (visible) status.textContent = message(error);
+      if (visible && !sending && revision === sendRevision) status.textContent = message(error);
       retry = true;
     } finally {
       reading = false;
-      if (visible && !sending && (pending() || retry)) timer = setTimeout(() => void refresh(), 1500);
+      if (visible && !sending && (pending() || retry || revision !== sendRevision)) {
+        timer = setTimeout(() => void refresh(), 1500);
+      }
     }
   }
   function act(): void {
     if (pending()) return openFleet();
+    if (sending) return;
+    menu();
+  }
+  function typeMessage(): void {
     if (!room || sending) return;
     openType({ title: name, quick: [{
       label: "Test group chat",
@@ -163,15 +175,17 @@ function showRoom(id: string, name: string): void {
   }
   function send(text: string): void {
     const api = state.api;
-    if (!visible || !api || sending || pending()) return;
+    if (!visible || !api || sending) return;
+    if (pending()) return toast("Wait for this round to finish");
     sending = true;
+    sendRevision++;
     clearTimeout(timer);
     status.textContent = "Sending…";
     void guard(api.sendGroup(id, text)).then((next) => {
       if (visible) render(next);
     }).catch((error) => toast(message(error))).finally(() => {
       sending = false;
-      void refresh();
+      if (visible) void refresh();
     });
   }
   function talk(mode: "hold" | "tap"): void {
@@ -181,10 +195,19 @@ function showRoom(id: string, name: string): void {
   }
   function menu(): void {
     if (pending()) return openFleet();
-    if (!room || sending) return;
+    if (sending) return;
     openSheet({ title: name, rows: [
-      ...(canTalk() ? [{ label: "Talk to group", onPick: () => talk("tap") }] : []),
-      { label: "Type message", onPick: act },
+      ...(room && canTalk() ? [{ label: "Talk to group", onPick: () => talk("tap") }] : []),
+      ...(room ? [{ label: "Type message", onPick: typeMessage }] : []),
+      { label: state.prefs.pinnedGroup?.id === id ? "Unpin from Home" : "Pin to Home", onPick: () => {
+        if (state.prefs.pinnedGroup?.id === id) {
+          unpinGroup();
+          toast("Unpinned from Home");
+        } else {
+          pinGroup({ id, name: room?.name || name });
+          toast("Pinned to Home");
+        }
+      } },
     ] });
   }
   push({
@@ -203,4 +226,5 @@ function showRoom(id: string, name: string): void {
       return true;
     },
   });
+  return send;
 }
