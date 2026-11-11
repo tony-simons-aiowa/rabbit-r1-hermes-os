@@ -289,6 +289,10 @@ textarea {
 .fleet-status.online { color: var(--ok); }
 .fleet-status.offline { color: var(--err); }
 .fleet-status.unknown { color: var(--muted); }
+.fleet-status.completed { color: var(--ok); }
+.fleet-status.failed { color: var(--err); }
+.fleet-status.cancelled { color: var(--muted); }
+.fleet-finished { min-height: 41px; }
 
 .empty {
   padding: 36px 14px;

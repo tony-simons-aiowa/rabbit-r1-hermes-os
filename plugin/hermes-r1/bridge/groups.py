@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import secrets
+import time
 
 from .host import HostError, Json
 from .store import Store
@@ -38,16 +39,51 @@ class Groups:
         if room is None:
             raise HostError("not_found", "Unknown group chat.", 404)
         if room_id not in self.tasks and room["rounds"]:
-            for reply in room["rounds"][-1]["replies"]:
+            changed = False
+            round_ = room["rounds"][-1]
+            for reply in round_["replies"]:
                 if reply["status"] == "pending":
                     reply.update(status="failed", error="Reply interrupted by a bridge restart.")
+                    changed = True
+            if changed:
+                if round_.get("started_ts"):
+                    self._record_finished(device, room, round_)
+                else:
+                    self.store.save_group(device, room)
         return room
+
+    def _record_finished(self, device: str, room: Json, round_: Json) -> None:
+        """Record a single compact result for a completed (or recovered) round."""
+        if round_.get("finished_ts") is not None:
+            return
+        replies = round_.get("replies", [])
+        if any(reply.get("status") == "pending" for reply in replies):
+            return
+        statuses = [reply.get("status") for reply in replies]
+        status = "cancelled" if "cancelled" in statuses else "failed" if "failed" in statuses else "completed"
+        names = {member.get("id"): member.get("name") for member in room.get("members", [])}
+        snippets = []
+        for reply in replies:
+            text = " ".join(str(reply.get("text", "")).split())
+            if text:
+                snippets.append(f"{names.get(reply.get('bot')) or reply.get('bot', 'bot')}: {text}")
+        preview = " · ".join(snippets)[:240]
+        ts = time.time()
+        round_["finished_ts"] = ts
+        try:
+            self.store.finish_group_round(device, room, {
+                "kind": "group", "room_id": room["id"], "name": room["name"],
+                "status": status, "text": preview, "ts": ts,
+            })
+        except Exception:
+            # A failed ancillary write cannot affect ongoing turn completion.
+            log.warning("Could not persist finished group round", exc_info=True)
 
     def send(self, device: str, room_id: str, text: str) -> Json:
         room = self.get(device, room_id)
         if room_id in self.tasks:
             raise HostError("busy", "Wait for this round to finish.", 409)
-        round_ = {"text": text, "replies": [
+        round_ = {"text": text, "started_ts": time.time(), "replies": [
             {"bot": bot["id"], "status": "pending", "text": "", "error": ""}
             for bot in room["members"]
         ]}
@@ -79,7 +115,8 @@ class Groups:
                 f"Recent transcript: {context}\n\nCurrent user message:\n{round_['text']}"
             )
             try:
-                turn = await self.turns.start(device, member["id"], None, prompt, False)
+                turn = await self.turns.start(device, member["id"], None, prompt, False,
+                                              record_finished=False)
                 cursor = 0
                 while True:
                     events, cursor, done = await self.turns.wait_events(turn.id, cursor, 20, device_id=device)
@@ -92,10 +129,13 @@ class Groups:
             except Exception:
                 log.exception("Group reply failed")
                 reply.update(status="failed", error="This bot could not reply.")
-            try:
-                self.store.save_group(device, room)
-            except OSError:
-                log.exception("Could not save group reply")
+            if any(item["status"] == "pending" for item in round_["replies"]):
+                try:
+                    self.store.save_group(device, room)
+                except OSError:
+                    log.exception("Could not save group reply")
+            else:
+                self._record_finished(device, room, round_)
 
         try:
             await asyncio.gather(*(answer(member, reply)

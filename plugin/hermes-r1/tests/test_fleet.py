@@ -63,7 +63,7 @@ async def test_fleet_ask_lifecycle_and_response(fleet_client):
     turn_id = (await response.json())["turn_id"]
 
     snapshot = await _wait_for(client, device, lambda data: bool(data["needs_you"]))
-    assert set(snapshot) == {"needs_you", "working", "gateways"}
+    assert set(snapshot) == {"needs_you", "working", "finished", "gateways"}
     assert all(set(gateway) == {"id", "name", "status"} for gateway in snapshot["gateways"])
     assert all(gateway["status"] in {"online", "offline", "unknown"}
                for gateway in snapshot["gateways"])
@@ -132,5 +132,30 @@ async def test_fleet_lists_only_calling_device_turns(fleet_client):
     foreign = await _fleet(client, other)
     assert all(item["turn_id"] != turn_id for item in foreign["needs_you"])
     assert all(item["turn_id"] != turn_id for item in foreign["working"])
+    assert all(item.get("turn_id") != turn_id for item in foreign["finished"])
 
     await client.post(f"/api/v1/turns/{turn_id}/stop", headers=owner)
+
+
+async def test_finished_direct_results_are_device_private_persistent_and_exact(fleet_client):
+    client, store = fleet_client
+    owner = await _pair(client, store, "owner")
+    other = await _pair(client, store, "other")
+    response = await client.post(
+        "/api/v1/bots/default/turns", json={"text": "finished-result"}, headers=owner,
+    )
+    turn_id = (await response.json())["turn_id"]
+    snapshot = await _wait_for(client, owner, lambda data: bool(data["finished"]))
+    item, = snapshot["finished"]
+    assert item["kind"] == "chat"
+    assert item["bot"] == "default"
+    assert item["turn_id"] == turn_id
+    assert item["session_id"]
+    assert item["status"] == "completed"
+    assert "finished-result" in item["text"]
+    assert item["ts"] > 0
+    assert (await _fleet(client, other))["finished"] == []
+
+    reopened = Store(store.state_dir)
+    device_id = reopened.device_for_token(owner["Authorization"].split()[1])["id"]
+    assert reopened.finished(device_id)[0] == item

@@ -5,6 +5,7 @@ import time
 import pytest
 
 from hermes_r1.bridge.auth import sign_asset
+from hermes_r1.bridge.groups import Groups
 from hermes_r1.bridge.mock_host import MockHost
 from hermes_r1.bridge.server import create_app
 from hermes_r1.bridge.store import Store
@@ -560,3 +561,51 @@ async def test_group_round_shares_previous_replies_and_is_device_owned(aiohttp_c
     reopened = Store(store.state_dir)
     owner_id = reopened.device_for_token(owner["Authorization"].split()[1])["id"]
     assert len(reopened.group_rooms(owner_id)[room_id]["rounds"]) == 2
+    fleet = await (await client.get("/api/v1/fleet", headers=owner)).json()
+    group_results = [item for item in fleet["finished"] if item["kind"] == "group"]
+    assert len(group_results) == 2
+    assert {item["room_id"] for item in group_results} == {room_id}
+    assert all(item["name"] == "Panel" and item["status"] == "completed" for item in group_results)
+    assert len({item["ts"] for item in group_results}) == 2
+    assert len(fleet["finished"]) == 2  # group member turns do not leak as duplicate chat rows
+    assert (await (await client.get("/api/v1/fleet", headers=other)).json())["finished"] == []
+    assert reopened.finished(owner_id) == fleet["finished"]
+
+
+async def test_legacy_interrupted_group_round_keeps_transcript_without_backfill(aiohttp_client, store, static_dir):
+    client = await aiohttp_client(create_app(MockHost(speed=0), store, static_dir=static_dir))
+    owner = await pair_device(client, store)
+    token = owner["Authorization"].split()[1]
+    device_id = store.device_for_token(token)["id"]
+    room_id = "legacy-room"
+    store.save_group(device_id, {
+        "id": room_id, "name": "Old room", "members": [{"id": "default", "name": "Hermes"}],
+        "rounds": [{"text": "old prompt", "replies": [
+            {"bot": "default", "status": "pending", "text": "", "error": ""},
+        ]}],
+    })
+    path = f"/api/v1/groups/{room_id}"
+    first = await (await client.get(path, headers=owner)).json()
+    assert first["rounds"][0]["replies"][0]["status"] == "failed"
+    await client.get(path, headers=owner)
+    fleet = await (await client.get("/api/v1/fleet", headers=owner)).json()
+    assert fleet["finished"] == []
+
+
+def test_restart_recovers_modern_interrupted_group_result_once(store):
+    code, _ = store.create_pair_code()
+    _, device = store.redeem_pair_code(code, "owner")
+    room_id = "modern-room"
+    store.save_group(device["id"], {
+        "id": room_id, "name": "Modern room", "members": [{"id": "default", "name": "Hermes"}],
+        "rounds": [{"text": "prompt", "started_ts": time.time() - 1, "replies": [
+            {"bot": "default", "status": "pending", "text": "", "error": ""},
+        ]}],
+    })
+    groups = Groups(store, None)
+    room = groups.get(device["id"], room_id)
+    assert room["rounds"][0]["replies"][0]["status"] == "failed"
+    groups.get(device["id"], room_id)
+    entries = store.finished(device["id"])
+    assert len(entries) == 1 and entries[0]["status"] == "failed"
+    assert entries[0]["room_id"] == room_id
