@@ -101,7 +101,12 @@ export function openGroupRoom(id: string, name: string): (text: string) => void 
   return showRoom(id, name);
 }
 
-function showRoom(id: string, name: string): (text: string) => void {
+/** Open the exact saved room, then send once its current room state has loaded. */
+export function openGroupRoomWithMessage(id: string, name: string, text: string): void {
+  showRoom(id, name, text);
+}
+
+function showRoom(id: string, name: string, initialText?: string): (text: string) => void {
   const el = screenEl("groups");
   const status = h("div", { class: "fleet-summary", role: "status" }, "Loading…");
   const transcript = h("div", { class: "group-transcript" });
@@ -113,6 +118,7 @@ function showRoom(id: string, name: string): (text: string) => void {
   let reading = false;
   let sending = false;
   let sendRevision = 0;
+  let initialMessage = initialText;
 
   function pending(): boolean {
     return room?.rounds[room.rounds.length - 1]?.replies.some((reply) => reply.status === "pending") ?? false;
@@ -150,9 +156,24 @@ function showRoom(id: string, name: string): (text: string) => void {
     let retry = false;
     try {
       const next = await guard(api.group(id));
-      if (visible && !sending && revision === sendRevision) render(next);
+      if (visible && !sending && revision === sendRevision) {
+        render(next);
+        if (initialMessage !== undefined) {
+          const prompt = initialMessage;
+          initialMessage = undefined;
+          if (pending()) {
+            status.textContent = "Group is still replying — routine was not sent";
+            toast("Wait for this group to finish");
+          } else {
+            send(prompt);
+          }
+        }
+      }
     } catch (error) {
-      if (visible && !sending && revision === sendRevision) status.textContent = message(error);
+      if (visible && !sending && revision === sendRevision) {
+        status.textContent = initialMessage !== undefined ? `Routine failed · ${message(error)}` : message(error);
+        initialMessage = undefined;
+      }
       retry = true;
     } finally {
       reading = false;
@@ -183,7 +204,10 @@ function showRoom(id: string, name: string): (text: string) => void {
     status.textContent = "Sending…";
     void guard(api.sendGroup(id, text)).then((next) => {
       if (visible) render(next);
-    }).catch((error) => toast(message(error))).finally(() => {
+    }).catch((error) => {
+      status.textContent = `Send failed · ${message(error)}`;
+      toast(message(error));
+    }).finally(() => {
       sending = false;
       if (visible) void refresh();
     });

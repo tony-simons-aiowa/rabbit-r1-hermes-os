@@ -131,6 +131,7 @@ Default `DeviceConfig`:
 | `GET /api/v1/bootstrap` | device | | `{"server":{"version","mock"},"device":{"id","name"},"config":DeviceConfig,"config_rev":int,"bots":Bot[],"voice":{"stt":bool,"tts":bool}}` |
 | `GET /api/v1/bots` | device | | `{"bots":Bot[],"config_rev":int}` — `config_rev` lets the device notice Studio edits and re-bootstrap |
 | `GET /api/v1/fleet` | device | | `{"needs_you":[{"turn_id","bot_id","ask"}],"working":[{"turn_id","bot_id"}],"finished":[…],"gateways":[{"id","name","status"}]}` — `ask` is a turn ask event without `seq`. Gateway status is `online`, `offline`, or `unknown`. Activity is limited to turns started by the authenticated device through this bridge. |
+| `GET /api/v1/routines` | device | | `{"routines":Routine[]}` — saved prompts owned by this paired device |
 | `GET /api/v1/bots/{bot}/sessions?limit=20` | device | | `{"sessions":Session[]}` newest first |
 | `GET /api/v1/bots/{bot}/sessions/{sid}/messages?limit=30` | device | | `{"messages":Message[]}` oldest→newest, last `limit` user/assistant messages; tool results folded into `tools` |
 | `POST /api/v1/bots/{bot}/turns` | device | `{"text":"…","session_id":"…"\|null,"speak":bool}` | `{"turn_id":"t_…","session_id":"…"}`; 409 `bot_locked`, 429 `busy` |
@@ -157,6 +158,8 @@ Turn retention: a finished turn's event log is kept 10 minutes. One running turn
 | `PUT /api/v1/admin/config` (body `DeviceConfig`) | `{"config":DeviceConfig,"config_rev":int}`; validates + fills defaults; 400 `bad_config` |
 | `POST /api/v1/admin/pair` | `{"code":"ABCD2345","expires":unix,"url":"<public_url>/?pair=ABCD2345","qr":{"title":"Hermes","url":…,"description":"Hermes Agent for rabbit r1","iconUrl":"<public_url>/nous-girl.png","themeColor":"#4a84fe"}}` — code: 8 chars from `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`, single use, 10 min |
 | `DELETE /api/v1/admin/devices/{id}` | `{"ok":true}` |
+| `GET /api/v1/admin/devices/{id}/routines` | `{"routines":Routine[],"groups":[{"id","name"}]}` |
+| `PUT /api/v1/admin/devices/{id}/routines` (body `{"routines":Routine[]}`) | Same response as GET; replaces the device’s list after checking target IDs and room ownership |
 | `POST /api/v1/admin/preview-token` | `{"token":"…"}` — a device token valid 12 h, device name "Studio preview", not listed in devices |
 | `PUT /api/v1/admin/public-url` (`{"url":"https://…"}`) | `{"public_url":…}` |
 | `POST /api/v1/admin/inbox` (`{"title","body","bot","level"}`) | `{"item":InboxItem}` — test notification |
@@ -303,10 +306,12 @@ Edits apply to a local draft → debounced `PUT /admin/config` (600 ms) → "Sav
 
 **Setup** walks through the local bridge, configured gateways, the public HTTPS health page, QR pairing, and a first message. Studio distinguishes computer and emulator checks from steps the user confirms on a physical R1.
 
+**Routines** saves up to 30 prompts per paired device. A `Routine` has `id`, `label`, `text`, and `target: {kind: "bot" | "group", id}`. Home → Routines shows each saved destination. Selecting a routine sends the prompt to that destination and opens its conversation. Group targets must belong to the selected device.
+
 ## 8. Security posture
 
 The bridge can drive an agent that controls the user's computer, and it is exposed to the internet through a tunnel. Therefore: device tokens are 256-bit random and stored hashed; pairing codes are single-use and short-lived; admin is loopback-only by default; upstream Hermes keys never reach the browser; request bodies are size-limited (64 KB JSON, 10 MB audio); all text from Hermes is rendered with `textContent` (never `innerHTML`); the static apps send `Content-Security-Policy: default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self'`.
 
 ## 9. Not in v0.1
 
-Faithful Blobatar rendering (mapped to the 7 shapes for now), routines editor, image attachments from the R1 camera, per-device configs, WebSocket transport.
+Faithful Blobatar rendering (mapped to the 7 shapes for now), image attachments from the R1 camera, per-device appearance and button settings, WebSocket transport.

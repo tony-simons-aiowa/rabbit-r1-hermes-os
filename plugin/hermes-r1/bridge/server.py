@@ -29,6 +29,7 @@ MAX_JSON_BYTES = 64 * 1024
 MAX_AUDIO_BYTES = 10 * 1024 * 1024
 MAX_TTS_TEXT = 2000
 MAX_TURN_TEXT = 8000
+MAX_GROUP_TEXT = 2000
 MAX_ANSWER_TEXT = 4000
 AVATAR_MIN, AVATAR_MAX = 16, 256
 AVATAR_CACHE_SIZE = 64
@@ -385,6 +386,73 @@ async def list_groups(request: web.Request) -> web.Response:
     return web.json_response({"groups": request.app[APP_GROUPS].list(request[REQ_DEVICE]["id"])})
 
 
+async def list_routines(request: web.Request) -> web.Response:
+    device_id = request[REQ_DEVICE]["id"]
+    return web.json_response({"routines": request.app[APP_STORE].device_routines(device_id)})
+
+
+def _validate_routines(raw: Any, bot_ids: set[str], group_ids: set[str]) -> list[Json]:
+    if not isinstance(raw, list) or len(raw) > 30:
+        raise HostError("bad_request", "routines must be a list of at most 30 items.", 400)
+    routines: list[Json] = []
+    seen: set[str] = set()
+    for item in raw:
+        if not isinstance(item, dict):
+            raise HostError("bad_request", "Each routine must be an object.", 400)
+        routine_id = item.get("id")
+        label = item.get("label")
+        text = item.get("text")
+        target = item.get("target")
+        if not isinstance(routine_id, str) or not routine_id.strip() or len(routine_id) > 80:
+            raise HostError("bad_request", "Routine id must be 1–80 characters.", 400)
+        routine_id = routine_id.strip()
+        if routine_id in seen:
+            raise HostError("bad_request", "Routine ids must be unique.", 400)
+        if not isinstance(label, str) or not label.strip() or len(label) > 64:
+            raise HostError("bad_request", "Routine label must be 1–64 characters.", 400)
+        if not isinstance(text, str) or not text.strip():
+            raise HostError("bad_request", "Routine text is required.", 400)
+        if not isinstance(target, dict) or not isinstance(target.get("kind"), str) or target["kind"] not in {"bot", "group"}:
+            raise HostError("bad_request", "Routine target must be a bot or group.", 400)
+        target_id = target.get("id")
+        if not isinstance(target_id, str) or not target_id or len(target_id) > 120:
+            raise HostError("bad_request", "Routine target id is invalid.", 400)
+        kind = target["kind"]
+        text_limit = MAX_GROUP_TEXT if kind == "group" else MAX_TURN_TEXT
+        if len(text) > text_limit:
+            raise HostError("bad_request", f"Routine text must be 1–{text_limit} characters for this target.", 400)
+        if (kind == "bot" and target_id not in bot_ids) or (kind == "group" and target_id not in group_ids):
+            raise HostError("bad_request", "Routine target is unavailable for this device.", 400)
+        seen.add(routine_id)
+        routines.append({"id": routine_id, "label": label.strip(), "text": text,
+                         "target": {"kind": kind, "id": target_id}})
+    return routines
+
+
+async def admin_device_routines(request: web.Request) -> web.Response:
+    store: Store = request.app[APP_STORE]
+    device_id = request.match_info["device_id"]
+    device = store.paired_device(device_id)
+    if device is None:
+        raise HostError("not_found", "No active paired device with that id.", 404)
+    rooms = store.group_rooms(device_id)
+    if request.method == "PUT":
+        body = await _json_body(request)
+        host: Any = request.app[APP_HOST]
+        bot_ids = {str(bot["id"]) for bot in await host.list_bots()}
+        routines = _validate_routines(body.get("routines"), bot_ids, set(rooms))
+        try:
+            store.set_device_routines(device_id, routines)
+        except KeyError as exc:
+            raise HostError("not_found", "No active paired device with that id.", 404) from exc
+        except Exception as exc:
+            raise HostError("storage_error", "Could not save routines.", 500) from exc
+    else:
+        routines = store.device_routines(device_id)
+    groups = [{"id": room["id"], "name": room["name"]} for room in rooms.values()]
+    return web.json_response({"routines": routines, "groups": groups})
+
+
 async def create_group(request: web.Request) -> web.Response:
     body = await _json_body(request)
     name = _required_str(body, "name", max_len=40, message="Enter a group name.")
@@ -407,7 +475,7 @@ async def get_group(request: web.Request) -> web.Response:
 
 async def send_group(request: web.Request) -> web.Response:
     body = await _json_body(request)
-    text = _required_str(body, "text", max_len=2000, message="Enter a group message.")
+    text = _required_str(body, "text", max_len=MAX_GROUP_TEXT, message="Enter a group message.")
     room = request.app[APP_GROUPS].send(request[REQ_DEVICE]["id"], request.match_info["gid"], text.strip())
     return web.json_response(room, status=202)
 
@@ -754,6 +822,7 @@ def _add_routes(app: web.Application) -> None:
     r.add_get("/api/v1/bots", list_bots)
     r.add_get("/api/v1/fleet", fleet)
     r.add_get("/api/v1/groups", list_groups)
+    r.add_get("/api/v1/routines", list_routines)
     r.add_post("/api/v1/groups", create_group)
     r.add_get("/api/v1/groups/{gid}", get_group)
     r.add_post("/api/v1/groups/{gid}/messages", send_group)
@@ -773,6 +842,8 @@ def _add_routes(app: web.Application) -> None:
     r.add_put("/api/v1/admin/config", admin_put_config)
     r.add_post("/api/v1/admin/pair", admin_pair)
     r.add_delete("/api/v1/admin/devices/{id}", admin_delete_device)
+    r.add_get("/api/v1/admin/devices/{device_id}/routines", admin_device_routines)
+    r.add_put("/api/v1/admin/devices/{device_id}/routines", admin_device_routines)
     r.add_post("/api/v1/admin/preview-token", admin_preview_token)
     r.add_put("/api/v1/admin/public-url", admin_public_url)
     r.add_post("/api/v1/admin/inbox", admin_inbox)

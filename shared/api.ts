@@ -1,5 +1,6 @@
 // Typed client for the bridge API (docs/SPEC.md section 3). Same-origin, fetch only.
 import type {
+  AdminRoutines,
   AdminState,
   Bootstrap,
   Bot,
@@ -11,6 +12,7 @@ import type {
   MemoryGraph,
   Message,
   PairInfo,
+  Routine,
   Session,
   TurnEvent,
 } from "./protocol";
@@ -135,6 +137,9 @@ export class Api {
   fleet() {
     return this.request<FleetData>("GET", "/fleet");
   }
+  routines() {
+    return this.request<{ routines: Routine[] }>("GET", "/routines");
+  }
   groups() {
     return this.request<{ groups: GroupSummary[] }>("GET", "/groups");
   }
@@ -163,6 +168,12 @@ export class Api {
   }
   adminRemoveDevice(id: string) {
     return this.request<{ ok: boolean }>("DELETE", `/admin/devices/${encodeURIComponent(id)}`);
+  }
+  adminRoutines(deviceId: string) {
+    return this.request<AdminRoutines>("GET", `/admin/devices/${encodeURIComponent(deviceId)}/routines`);
+  }
+  adminSaveRoutines(deviceId: string, routines: Routine[]) {
+    return this.request<AdminRoutines>("PUT", `/admin/devices/${encodeURIComponent(deviceId)}/routines`, { routines });
   }
   adminPreviewToken() {
     return this.request<{ token: string }>("POST", "/admin/preview-token", {});
