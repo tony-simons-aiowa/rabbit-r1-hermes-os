@@ -74,6 +74,18 @@ kbd {
   text-align: center;
 }
 
+.setup-checklist { display: grid; gap: 12px; padding-left: 24px; margin-top: 16px; }
+.setup-step { padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.setup-step-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.setup-badge { color: var(--muted); font-size: 12px; }
+.setup-ok .setup-badge { color: var(--ok); }
+.setup-fail { border-color: color-mix(in srgb, var(--err) 50%, var(--border)); }
+.setup-fail .setup-badge, .setup-next { color: var(--err); }
+.setup-step > p { margin-top: 6px; }
+.setup-confirm { display: flex; align-items: flex-start; gap: 8px; color: var(--muted); }
+.setup-confirm input { margin-top: 3px; }
+.setup-pair canvas { display: block; }
+
 .visually-hidden {
   position: absolute;
   width: 1px;

@@ -68,7 +68,7 @@ Open the `studio:` link it prints. The emulator on the right is the real R1 app 
    hermes r1 serve --tunnel tailscale
    ```
    `--tunnel tailscale` (Tailscale Funnel) gives a stable address and mounts this bridge at `/r1` on port `10000`, preserving other routes on that listener. It removes only the `/r1` route when the bridge exits. `--tunnel cloudflared` gives a temporary address that changes on every restart, so you would have to re-add the app each time. You can also pass `--public-url https://…` if you run your own reverse proxy; use `--base-path /r1` when mounting behind a path prefix.
-6. **Pair your R1** — open the `studio:` link printed by the bridge, go to **Devices → Pair a device**, and scan the QR code with the R1.
+6. **Set up your R1** — open the `studio:` link printed by the bridge and choose **Setup**. Follow the bridge, gateway and HTTPS checks, then scan the pairing QR code with your R1 and send a first message. The Studio emulator is available for a computer-only walkthrough.
 
 ### Add another Hermes gateway
 

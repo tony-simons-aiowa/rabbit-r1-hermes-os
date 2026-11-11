@@ -151,6 +151,7 @@ Turn retention: a finished turn's event log is kept 10 minutes. One running turn
 | Method & path | Response |
 |---|---|
 | `GET /api/v1/admin/state` | `{"config":DeviceConfig,"config_rev":int,"devices":[{"id","name","created","last_seen"}],"bots":Bot[],"public_url":string,"local_url":string,"voice":{"stt","tts"},"mock":bool,"version":string}` |
+| `GET /api/v1/admin/setup-status` | `{"gateways":[{"id","name","status"}]}` — checks configured gateways for Studio Setup |
 | `PUT /api/v1/admin/config` (body `DeviceConfig`) | `{"config":DeviceConfig,"config_rev":int}`; validates + fills defaults; 400 `bad_config` |
 | `POST /api/v1/admin/pair` | `{"code":"ABCD2345","expires":unix,"url":"<public_url>/?pair=ABCD2345","qr":{"title":"Hermes","url":…,"description":"Hermes Agent for rabbit r1","iconUrl":"<public_url>/nous-girl.png","themeColor":"#4a84fe"}}` — code: 8 chars from `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`, single use, 10 min |
 | `DELETE /api/v1/admin/devices/{id}` | `{"ok":true}` |
@@ -295,6 +296,8 @@ Single page at `/studio/`, opened as `http://127.0.0.1:8717/studio/#admin=<token
 Tabs: **Devices** (public URL field, "Pair a device" → QR code rendered client-side + code + expiry countdown, device list with remove, "Send test notification") · **Appearance** (preset gallery with swatches, per-token color overrides, font scale, greeting, clock) · **Bots** (drag/▲▼ reorder, hide toggle, avatar shape + color override with live avatar preview, pets toggle, active strip toggle) · **Quick prompts** (add/edit/remove/reorder, optional bot) · **Voice & buttons** (voice input mode, auto-speak, double-click and long-press behavior, show tools / notes).
 
 Edits apply to a local draft → debounced `PUT /admin/config` (600 ms) → "Saved ✓".
+
+**Setup** walks through the local bridge, configured gateways, the public HTTPS health page, QR pairing, and a first message. Studio distinguishes computer and emulator checks from steps the user confirms on a physical R1.
 
 ## 8. Security posture
 

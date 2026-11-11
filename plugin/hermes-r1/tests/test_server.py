@@ -380,6 +380,18 @@ async def test_admin_requires_token(client):
     assert (await client.get("/api/v1/admin/state", headers={"Authorization": "Bearer x"})).status == 401
 
 
+async def test_setup_status_is_local_admin_only(client, store):
+    path = "/api/v1/admin/setup-status"
+    assert (await client.get(path)).status == 401
+    device = await pair_device(client, store)
+    assert (await client.get(path, headers=device)).status == 401
+    forwarded = await client.get(path, headers={**admin(store), "X-Forwarded-For": "192.0.2.1"})
+    assert forwarded.status == 403
+    response = await client.get(path, headers=admin(store))
+    assert response.status == 200
+    assert await response.json() == {"gateways": [{"id": "local", "name": "Local", "status": "online"}]}
+
+
 async def test_admin_forbidden_with_proxy_header(client, store):
     for header in ("X-Forwarded-For", "CF-Connecting-IP", "Tailscale-User-Login"):
         resp = await client.get("/api/v1/admin/state", headers={**admin(store), header: "1.2.3.4"})
