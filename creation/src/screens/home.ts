@@ -4,14 +4,16 @@ import type { AppEvent } from "../platform";
 import type { Screen } from "../nav";
 import { renderAvatar, setAvatarState, renderPet, petMoodFor } from "../../../shared/avatar";
 import type { Bot } from "../../../shared/protocol";
-import { state, subscribe, orderedBots, rememberBot, availableGateways, selectedGateway, rememberGateway, gatewayId } from "../state";
+import { state, subscribe, orderedBots, rememberBot, availableGateways, selectedGateway, rememberGateway, gatewayId, unpinBot } from "../state";
 import { refreshChrome, toast } from "../chrome";
 import { openChat, openInbox, openFleet, openGroups, openSettings, talk, flags } from "../app";
-import { canTalk } from "./listening";
+import { canTalk, openListening } from "./listening";
+import { openGroupRoom } from "./groups";
+import { openSheet } from "./menu";
 
 const PET_HEIGHT = 30;
 
-type Item = { kind: "bot"; bot: Bot } | { kind: "gateway" } | { kind: "fleet" } | { kind: "groups" } | { kind: "inbox" } | { kind: "settings" };
+type Item = { kind: "bot"; bot: Bot } | { kind: "pinnedBot"; bot: Bot } | { kind: "pinnedGroup"; id: string; name: string } | { kind: "gateway" } | { kind: "fleet" } | { kind: "groups" } | { kind: "inbox" } | { kind: "settings" };
 
 export function createHome(): Screen {
   const el = h("div", { class: "scr home" });
@@ -34,7 +36,7 @@ export function createHome(): Screen {
 
   function botOf(i: number): Bot | null {
     const it = items[i];
-    return it && it.kind === "bot" ? it.bot : null;
+    return it && (it.kind === "bot" || it.kind === "pinnedBot") ? it.bot : null;
   }
 
   function syncHighlight(): void {
@@ -72,17 +74,33 @@ export function createHome(): Screen {
     }
     if (it.kind === "fleet") return openFleet();
     if (it.kind === "groups") return openGroups();
+    if (it.kind === "pinnedGroup") { openGroupRoom(it.id, it.name); return; }
     if (it.kind === "inbox") return openInbox();
     if (it.kind === "settings") return openSettings();
-    if (!it.bot.reachable) return toast(it.bot.locked_reason || "This bot is locked");
-    rememberBot(it.bot.id);
-    openChat(it.bot.id);
+    const bot = it.bot;
+    if (!bot.reachable) {
+      if (it.kind === "pinnedBot") {
+        openSheet({ title: bot.name, detail: bot.locked_reason || "This bot is unavailable", rows: [
+          { label: "Unpin from Home", onPick: () => { unpinBot(); toast("Unpinned from Home"); } },
+        ] });
+        return;
+      }
+      return toast(bot.locked_reason || "This bot is locked");
+    }
+    rememberBot(bot.id);
+    openChat(bot.id);
   }
 
   function render(force = false): void {
     const gateway = selectedGateway();
     const gateways = availableGateways();
-    const bots = orderedBots().filter((b) => gatewayId(b) === gateway);
+    const allBots = orderedBots();
+    const bots = allBots.filter((b) => gatewayId(b) === gateway);
+    const pinnedBot = allBots.find((b) => b.id === state.prefs.pinnedBot);
+    const pinnedGroup = state.prefs.pinnedGroup;
+    const pinAction = state.config.buttons.long_press === "talk"
+      ? (canTalk() ? "Hold to talk" : "Voice off")
+      : "Hold to open";
     const nIn = state.inbox.length;
     const sigNow = JSON.stringify([
       bots.map((b) => [b.id, b.name, b.state, b.active, b.reachable, b.last && b.last.text, b.pet && b.pet.url, b.avatar]),
@@ -92,6 +110,10 @@ export function createHome(): Screen {
       state.config.buttons.long_press,
       gateway,
       gateways,
+      state.prefs.pinnedBot,
+      pinnedBot && [pinnedBot.id, pinnedBot.name, pinnedBot.state, pinnedBot.reachable, pinnedBot.locked_reason, pinnedBot.avatar, pinnedBot.pet?.url],
+      pinnedGroup,
+      pinAction,
     ]);
     if (!force && sigNow === sig) return;
     sig = sigNow;
@@ -102,6 +124,12 @@ export function createHome(): Screen {
     items = bots.map((b): Item => ({ kind: "bot", bot: b }));
     items.unshift({ kind: "fleet" }, { kind: "groups" });
     if (gateways.length > 1) items.unshift({ kind: "gateway" });
+    if (pinnedBot || pinnedGroup) {
+      items.unshift(...[
+        ...(pinnedGroup ? [{ kind: "pinnedGroup" as const, id: pinnedGroup.id, name: pinnedGroup.name }] : []),
+        ...(pinnedBot ? [{ kind: "pinnedBot" as const, bot: pinnedBot }] : []),
+      ]);
+    }
     if (nIn) items.push({ kind: "inbox" });
     items.push({ kind: "settings" });
 
@@ -124,6 +152,11 @@ export function createHome(): Screen {
         const name = gateways.find((g) => g.id === gateway)?.name || "Local";
         return h("div", { class: "row hrow special gateway-row" }, h("div", { class: "row-main" }, h("div", { class: "row-t" }, "Gateway · " + name), h("div", { class: "row-s" }, "Click to switch")));
       }
+      if (it.kind === "pinnedGroup") {
+        avatars.push(null);
+        const hint = `Pinned group · ${pinAction}`;
+        return h("div", { class: "row hrow special pinned-destination" }, h("div", { class: "row-main" }, h("div", { class: "row-t" }, it.name), h("div", { class: "row-s" }, hint)));
+      }
       if (it.kind === "fleet") {
         avatars.push(null);
         return h("div", { class: "row hrow special fleet-entry" }, h("div", { class: "row-main" }, h("div", { class: "row-t" }, "Fleet Now"), h("div", { class: "row-s" }, "Needs You · Working · Gateways")));
@@ -144,13 +177,15 @@ export function createHome(): Screen {
       const b = it.bot;
       const av = renderAvatar(b.avatar, { botId: b.id, size: 34, state: b.state, animate: false });
       avatars.push(av);
-      const preview = b.last ? b.last.text.split("\n")[0] : b.title || b.description || "";
+      const preview = it.kind === "pinnedBot"
+        ? `Pinned bot · ${b.reachable ? pinAction : "Locked"}`
+        : b.last ? b.last.text.split("\n")[0] : b.title || b.description || "";
       const tail = b.reachable
         ? h("span", { class: "dot " + b.state })
         : h("span", { class: "lock", "aria-label": "locked" }, "🔒");
       return h(
         "div",
-        { class: "row hrow" + (b.reachable ? "" : " locked") },
+        { class: "row hrow" + (b.reachable ? "" : " locked") + (it.kind === "pinnedBot" ? " pinned-destination" : "") },
         av,
         h("div", { class: "row-main" }, h("div", { class: "row-t" }, b.name), h("div", { class: "row-s" }, preview)),
         tail,
@@ -185,6 +220,15 @@ export function createHome(): Screen {
           list.activate();
           return true;
         case "holdStart": {
+          const item = items[list.index];
+          if (item?.kind === "pinnedGroup") {
+            const sendGroup = openGroupRoom(item.id, item.name);
+            if (state.config.buttons.long_press !== "talk") return true;
+            if (!state.api) { toast("Bridge unavailable"); return true; }
+            if (!canTalk()) { toast("Voice not available — use Type"); return true; }
+            openListening({ group: item.name, mode: "hold", onTranscript: sendGroup });
+            return true;
+          }
           const b = botOf(list.index);
           if (!b) return true;
           if (!b.reachable) {

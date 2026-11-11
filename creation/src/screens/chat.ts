@@ -7,7 +7,7 @@ import { h, clear } from "../ui";
 import type { AppEvent } from "../platform";
 import type { Screen } from "../nav";
 import { MdView } from "../markdown";
-import { state, botById, rememberSession, savePrefs, subscribe } from "../state";
+import { state, botById, rememberSession, savePrefs, subscribe, pinBot, unpinBot } from "../state";
 import { toast, setOnline, refreshChrome } from "../chrome";
 import { guard, talk, openSessions, openHome } from "../app";
 import { playAudio } from "../voice";
@@ -408,6 +408,10 @@ export function createChat(botId: string): Screen {
     }
     if (isBusy()) rows.push({ label: "Stop", cls: "err", onPick: stop });
     rows.push({ label: "New chat", onPick: () => resume(null) });
+    rows.push({ label: state.prefs.pinnedBot === botId ? "Unpin from Home" : "Pin to Home", onPick: () => {
+      if (state.prefs.pinnedBot === botId) unpinBot(); else pinBot(botId);
+      toast(state.prefs.pinnedBot === botId ? "Pinned to Home" : "Unpinned from Home");
+    } });
     rows.push({ label: "Sessions", onPick: () => openSessions(botId) });
     if (state.voice.tts) rows.push({ label: "Read aloud", onPick: speakLast });
     rows.push({ label: "Back to bots", onPick: () => openHome() });

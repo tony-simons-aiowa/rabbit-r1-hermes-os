@@ -7,7 +7,8 @@ import { getJson, setJson, storage } from "./platform";
 export const TOKEN_KEY = "r1.token";
 const PREFS_KEY = "r1.prefs";
 
-type Prefs = { lastBot: string; sessions: Record<string, string>; gatewayId?: string };
+export type PinnedGroup = { id: string; name: string };
+type Prefs = { lastBot: string; sessions: Record<string, string>; gatewayId?: string; pinnedBot?: string; pinnedGroup?: PinnedGroup };
 
 export const state = {
   api: null as Api | null,
@@ -59,7 +60,7 @@ export async function clearToken(): Promise<void> {
 
 export async function loadPrefs(): Promise<void> {
   const p = await getJson<Prefs>(PREFS_KEY, { lastBot: "", sessions: {} });
-  state.prefs = { lastBot: p.lastBot || "", sessions: p.sessions || {}, gatewayId: p.gatewayId || "" };
+  state.prefs = { lastBot: p.lastBot || "", sessions: p.sessions || {}, gatewayId: p.gatewayId || "", pinnedBot: p.pinnedBot || undefined, pinnedGroup: p.pinnedGroup || undefined };
 }
 
 export function savePrefs(): void {
@@ -75,6 +76,30 @@ export function rememberSession(bot: string, sid: string): void {
 export function rememberBot(bot: string): void {
   state.prefs.lastBot = bot;
   savePrefs();
+}
+
+export function pinBot(bot: string): void {
+  state.prefs.pinnedBot = bot;
+  savePrefs();
+  notify();
+}
+
+export function pinGroup(group: PinnedGroup): void {
+  state.prefs.pinnedGroup = { id: group.id, name: group.name };
+  savePrefs();
+  notify();
+}
+
+export function unpinBot(): void {
+  delete state.prefs.pinnedBot;
+  savePrefs();
+  notify();
+}
+
+export function unpinGroup(): void {
+  delete state.prefs.pinnedGroup;
+  savePrefs();
+  notify();
 }
 
 export function botById(id: string): Bot | undefined {
